@@ -1,10 +1,9 @@
 from flask import request, render_template, flash, redirect, url_for, Blueprint
-from flask.ext.login import login_required
-
+from flask_login import login_required
 from app.views.zone.models import Zone, ZoneForm, ZoneTemplateForm
 from app.views.cluster.models import Cluster
 from app.views.common.models import ActionForm
-from app import db
+from app.database import db_session
 from app.one import OneProxy
 
 zone_bp = Blueprint('zone_bp', __name__, template_folder='templates')
@@ -49,8 +48,8 @@ def manage(zone_number):
       if form.validate():
         try:
           form.populate_obj(zone)
-          db.session.add(zone)
-          db.session.commit()
+          db_session.add(zone)
+          db_session.commit()
           flash('Successfully saved {}.'.format(zone.name), 'success')
           return redirect(url_for('zone_bp.list'))
         except Exception as e:
@@ -75,8 +74,8 @@ def edit_template(zone_number):
         try:
           zone.template = request.form['template']
           zone.vars = request.form['vars']
-          db.session.add(zone)
-          db.session.commit()
+          db_session.add(zone)
+          db_session.commit()
           flash('Successfully saved template for {}.'.format(zone.name), 'success')
           return redirect(url_for('zone_bp.view', zone_number=zone.number))
         except Exception as e:
@@ -98,8 +97,8 @@ def delete(zone_number):
         flash('Delete {} action cancelled'.format(zone.name), category='info')
         return redirect(url_for('zone_bp.view', zone_number=zone.number))
       elif request.form['action'] == 'Confirm':
-        db.session.delete(zone)
-        db.session.commit()
+        db_session.delete(zone)
+        db_session.commit()
         flash('{} has been deleted'.format(zone.name), category='success')
         return redirect(url_for('zone_bp.list'))
     except Exception as e:
@@ -119,8 +118,8 @@ def discover(zone_number):
     existing_cluster = Cluster.query.filter_by(zone_number=zone.number, id=one_cluster.id).first()
     if existing_cluster is None:
       discovered_cluster = Cluster(id=one_cluster.id, zone=zone, name=one_cluster.name)
-      db.session.add(discovered_cluster)
-      db.session.commit()
+      db_session.add(discovered_cluster)
+      db_session.commit()
       flash('Newly discovered ONE cluster: {} (ID={}) in zone {}'
             .format(one_cluster.id, one_cluster.name, zone.name), category='success')
   return render_template('zone/discover.html', zone=zone, one_clusters=one_clusters, clusters=clusters)

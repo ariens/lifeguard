@@ -3,10 +3,12 @@ from wtforms import TextAreaField, StringField
 from wtforms.validators import InputRequired
 from app.views.cluster.models import Cluster
 from app.views.template.models import VarParser, ObjectLoader
-from app import db
+from app.database import Base, db_session
 from app.one import OneProxy
 from app.one import INCLUDING_DONE
 from  jinja2 import Environment
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime
+from sqlalchemy.orm import relationship, backref
 import re
 
 
@@ -14,15 +16,16 @@ class ExpandException(Exception):
   pass
 
 
-class VirtualMachinePool(db.Model):
-  id = db.Column(db.Integer, primary_key=True)
-  name = db.Column(db.String(100), unique=True, nullable=False)
-  cluster_id = db.Column(db.Integer, nullable=False)
-  zone_number = db.Column(db.Integer, nullable=False)
-  template = db.Column(db.Text(), default='{% extends cluster.template %}')
-  vars = db.Column(db.Text(), default='')
-  cardinality = db.Column(db.Integer, nullable=False, default=1)
-  cluster = db.relationship(
+class VirtualMachinePool(Base):
+  __tablename__ = 'virtual_machine_pool'
+  id = Column(Integer, primary_key=True)
+  name = Column(String(100), unique=True, nullable=False)
+  cluster_id = Column(Integer, nullable=False)
+  zone_number = Column(Integer, nullable=False)
+  template = Column(Text(), default='{% extends cluster.template %}')
+  vars = Column(Text(), default='')
+  cardinality = Column(Integer, nullable=False, default=1)
+  cluster = relationship(
     'Cluster',
     primaryjoin="and_(VirtualMachinePool.cluster_id == Cluster.id, VirtualMachinePool.zone_number == Cluster.zone_number)",
     foreign_keys=[cluster_id, zone_number])
@@ -130,18 +133,19 @@ class VirtualMachinePool(db.Model):
 
   @staticmethod
   def get_all(cluster):
-    return db.session.query(VirtualMachinePool).filter_by(cluster=cluster)
+    return db_session.query(VirtualMachinePool).filter_by(cluster=cluster)
 
   def get_peer_pools(self):
-    return db.session.query(VirtualMachinePool).filter_by(cluster=self.cluster)
+    return db_session.query(VirtualMachinePool).filter_by(cluster=self.cluster)
 
 
-class PoolMembership(db.Model):
-  vm_id = db.Column(db.Integer, primary_key=True)
-  pool_id = db.Column(db.Integer, db.ForeignKey('virtual_machine_pool.id'), primary_key=True)
-  pool = db.relationship('VirtualMachinePool', backref=db.backref('virtual_machine_pool', lazy='dynamic'))
-  date_added = db.Column(db.DateTime, nullable=False)
-  template = db.Column(db.Text(), default='{% extends cluster.template %}')
+class PoolMembership(Base):
+  __tablename__ = 'pool_membership'
+  vm_id = Column(Integer, primary_key=True)
+  pool_id = Column(Integer, ForeignKey('virtual_machine_pool.id'), primary_key=True)
+  pool = relationship('VirtualMachinePool', backref=backref('virtual_machine_pool', lazy='dynamic'))
+  date_added = Column(DateTime, nullable=False)
+  template = Column(Text(), default='{% extends cluster.template %}')
 
   def __init__(self, pool_id=None, pool=None, vm_id=None, date_added=None, vm=None, template=None):
     self.pool_id = pool_id
@@ -176,7 +180,7 @@ class PoolMembership(db.Model):
 
   @staticmethod
   def get_all(zone):
-    return db.session.query(PoolMembership).join(
+    return db_session.query(PoolMembership).join(
       PoolMembership.pool, aliased=True).filter_by(zone=zone)
 
   def parse_number(self):

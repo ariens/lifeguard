@@ -1,8 +1,6 @@
 from jira import JIRA
-from collections import Counter
 from app import app
-from datetime import datetime, timedelta, timezone
-from flask.ext.login import current_user
+from flask_login import current_user
 import pytz
 from datetime import datetime, timedelta
 
@@ -19,11 +17,13 @@ class JiraApi():
 
   @staticmethod
   def next_immediate_window_dates():
+    utc = pytz.utc
     tz = pytz.timezone(app.config['CM_TZ'])
-    now_utc = datetime.utcnow()
-    now_tz = tz.localize(now_utc)
+    now_utc = utc.localize(datetime.utcnow())
+    now_tz = now_utc.astimezone(tz)
     start = None
-    if now_tz.hour <= app.config['CM_DEADLINE_HOUR']  and now_tz.minute < app.config['CM_DEADLINE_MIN']:
+    if now_tz.hour < app.config['CM_DEADLINE_HOUR'] \
+            or (now_tz.hour == app.config['CM_DEADLINE_HOUR'] and now_tz.minute < app.config['CM_DEADLINE_MIN']):
       start = tz.localize(datetime(now_tz.year, now_tz.month, now_tz.day, app.config['CM_SAME_DAY_START_HOUR']))
     else:
       delay_hours = timedelta(hours=app.config['CM_DEADLINE_MISSED_DELAY_HOURS'])

@@ -1,15 +1,19 @@
 from flask_wtf import Form
 from wtforms import StringField, PasswordField, TextAreaField
 from wtforms.validators import InputRequired
-from app import db
+from app.database import Base, db_session
+from sqlalchemy import Column, Integer, String, Text
+from sqlalchemy.orm import relationship, backref
 
-class Zone(db.Model):
-  number = db.Column(db.Integer, primary_key=True)
-  name = db.Column(db.String(100), unique=True, nullable=False)
-  xmlrpc_uri = db.Column(db.String(100), nullable=False)
-  session_string = db.Column(db.String(100), nullable=False)
-  template = db.Column(db.Text())
-  vars = db.Column(db.Text())
+
+class Zone(Base):
+  __tablename__ = 'zone'
+  number = Column(Integer, primary_key=True)
+  name = Column(String(100), unique=True, nullable=False)
+  xmlrpc_uri = Column(String(100), nullable=False)
+  session_string = Column(String(100), nullable=False)
+  template = Column(Text())
+  vars = Column(Text())
 
   def __init__(self, number=None, name=None, xmlrpc_uri=None, session_string=None):
     self.name = name

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{%  block page_title %}
+    <a href="{{ url_for('zone_bp.list') }}">Tasks</a> / {{ task.name }}
+{% endblock %}
+{% block menu %}
+    <h3>Task Actions:</h3>
+    <li><i>no actions</i></li>
+
+{% endblock %}
+{% block container %}
+    <table>
+    <tr>
+        <td>Task ID</td><td>{{ task.id }}</td>
+    </tr>
+    <tr>
+        <td>Status</td><td>{{ task.status }}</td>
+    </tr>
+    <tr>
+        <td>Name</td><td>{{ task.name }}</td>
+    </tr>
+    <tr>
+        <td>Username</td><td>{{ task.username }}</td>
+    </tr>
+    <tr>
+        <td>Start</td><td>{{ task.start_time }}</td>
+    </tr>
+    <tr>
+        <td>End</td><td>{{ task.end_time }}</td>
+    </tr>
+    </table>
+    <pre>{{ task.description }}</pre>
+{% endblock %}

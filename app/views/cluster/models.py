@@ -1,17 +1,19 @@
 from flask_wtf import Form
-from app import db
 from sqlalchemy.schema import ForeignKeyConstraint
 from wtforms import StringField
 from wtforms.validators import InputRequired
+from app.database import Base
+from sqlalchemy import Column, Integer, String, ForeignKey, Text
+from sqlalchemy.orm import relationship, backref
 
-
-class Cluster(db.Model):
-  id = db.Column(db.Integer, primary_key=True)
-  zone = db.relationship('Zone', backref=db.backref('zone_ref', lazy='dynamic'))
-  zone_number = db.Column(db.Integer, db.ForeignKey('zone.number'), primary_key=True)
-  name = db.Column(db.String(100), unique=True, nullable=False)
-  template = db.Column(db.Text())
-  vars = db.Column(db.Text())
+class Cluster(Base):
+  __tablename__ = 'cluster'
+  id = Column(Integer, primary_key=True)
+  zone = relationship('Zone', backref=backref('zone_ref', lazy='dynamic'))
+  zone_number = Column(Integer, ForeignKey('zone.number'), primary_key=True)
+  name = Column(String(100), unique=True, nullable=False)
+  template = Column(Text())
+  vars = Column(Text())
   ForeignKeyConstraint('zone_number', 'zone.number')
 
   def __init__(self, id=id, zone_number=None, zone=None, name=None, template=None, vars=None):

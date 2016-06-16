@@ -1,17 +1,16 @@
 from flask import request, render_template, flash, redirect, url_for, Blueprint
-from flask.ext.login import login_required
+from flask_login import login_required
 from app.views.cluster.models import Cluster, ClusterTemplateForm, CreateVmForm, GenerateTemplateForm
 from app.views.zone.models import Zone
 from app.views.vpool.models import VirtualMachinePool
-from app import app, db
+from app import app
 from app.one import OneProxy
 from jinja2 import Environment, FunctionLoader
 from app.jira_api import JiraApi
 from app.views.template.models import ObjectLoader, VarParser
-
+from app.database import db_session
 
 cluster_bp = Blueprint('cluster_bp', __name__, template_folder='templates')
-
 
 def zone_template_loader(zone_number):
   return Zone.query.get(zone_number).template
@@ -20,7 +19,6 @@ def zone_template_loader(zone_number):
 def object_template_loader(obj):
   return object.template
 
-
 @cluster_bp.route('/cluster/<int:zone_number>/<int:cluster_id>', methods=['GET'])
 @login_required
 def view(zone_number, cluster_id):
@@ -28,7 +26,6 @@ def view(zone_number, cluster_id):
   cluster = Cluster.query.filter_by(zone=zone, id=cluster_id).first()
   pools = VirtualMachinePool.query.filter_by(cluster_id=cluster.id, zone_number=cluster.zone_number).all()
   return render_template('cluster/view.html', cluster=cluster, pools=pools)
-
 
 @cluster_bp.route('/cluster/<int:zone_number>/<int:cluster_id>/template', methods=['GET', 'POST'])
 @login_required
@@ -45,8 +42,8 @@ def edit_template(zone_number, cluster_id):
       try:
         cluster.template = request.form['template']
         cluster.vars = request.form['vars']
-        db.session.add(cluster)
-        db.session.commit()
+        db_session.add(cluster)
+        db_session.commit()
         flash('Successfully saved cluster template for {} (ID={}).'
               .format(cluster.name, cluster.id), 'success')
         return redirect(url_for('cluster_bp.view', zone_number=zone.number, cluster_id=cluster.id))
@@ -96,7 +93,6 @@ def vm_create(zone_number, cluster_id):
       one_proxy.create_vm(template=vm_template)
       flash('Created VM: {}'.format(vars['hostname']))
     except Exception as e:
-      raise e
       flash("Error parsing GET parameters: {}".format(e), category='danger')
   return render_template('cluster/vm_create.html',
                          form=form,

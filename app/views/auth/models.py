@@ -2,14 +2,17 @@ from ldap3 import Server, Connection, AUTO_BIND_NO_TLS, SUBTREE, ALL_ATTRIBUTES,
 from flask_wtf import Form
 from wtforms import StringField, PasswordField
 from wtforms.validators import InputRequired
-from app import db, app
+from app import app
+from sqlalchemy import Column, Integer, String
+from app.database import Base
 
-class User(db.Model):
-  id = db.Column(db.Integer, primary_key=True)
+class User(Base):
+  __tablename__ = 'user'
+  id = Column(Integer, primary_key=True)
   is_authenticated = True
   is_anonymous = False
   is_active = True
-  username = db.Column(db.String(100))
+  username = Column(String(100))
 
   def __init__(self, username):
     self.username = username

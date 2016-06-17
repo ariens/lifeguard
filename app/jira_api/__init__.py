@@ -48,8 +48,12 @@ class JiraApi():
                 basic_auth=(app.config['JIRA_APPROVER_USERNAME'], app.config['JIRA_APPROVER_PASSWORD']))
 
   @staticmethod
-  def ticket_link(issue):
-    return '<a href="{}/browse/{}">{}</a>'.format(app.config['JIRA_HOSTNAME'], issue.key, issue.key)
+  def ticket_link(issue=None, key=None):
+    if issue is not None:
+      return '<a href="{}/browse/{}">{}</a>'.format(app.config['JIRA_HOSTNAME'], issue.key, issue.key)
+    if key is not None:
+      return '<a href="{}/browse/{}">{}</a>'.format(app.config['JIRA_HOSTNAME'], key, key)
+    raise Exception("both issue and key are None")
 
   def resolve(self, issue):
     self.instance.transition_issue(
@@ -58,10 +62,12 @@ class JiraApi():
       assignee={'name': app.config['JIRA_USERNAME']},
       resolution={'id': app.config['JIRA_RESOLVE_STATE_ID']})
 
-  def defect_for_exception(self, summary_title, e):
+  def defect_for_exception(self, summary_title, e, username=None):
+    if username is None:
+      username = current_user.username
     return self.instance.create_issue(
       project=app.config['JIRA_PROJECT'],
-      summary='[auto-{}] Problem: {}'.format(current_user.username, summary_title),
+      summary='[auto-{}] Problem: {}'.format(username, summary_title),
       description="Exception: {}".format(e),
       customfield_13842=JiraApi.get_datetime_now(),
       customfield_13838= {"value": "No"},

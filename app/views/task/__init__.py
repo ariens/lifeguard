@@ -17,3 +17,15 @@ def view(task_id):
     flash("There was an error fetching task_id={}: {}".format(task_id, e), category='danger')
     return redirect(url_for('zone_bp.list'))
   return render_template('task/view.html', task=task)
+
+@task_bp.route('/task/list', methods=['GET'])
+@login_required
+def list():
+  tasks = None
+  try:
+    tasks = Task.query.order_by(Task.end_time.desc()).all()
+  except Exception as e:
+    traceback.print_exc(file=sys.stdout)
+    flash("There was an error fetching tasks: {}".format(e), category='danger')
+    return redirect(url_for('auth_bp.home'))
+  return render_template('task/list.html', tasks=tasks)

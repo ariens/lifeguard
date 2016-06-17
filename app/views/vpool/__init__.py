@@ -144,7 +144,7 @@ def shrink(pool_id):
                          pool=pool,
                          shrink_members=shrink_members)
 
-def create_tickets(title, description, username, pool_id, expansion_names):
+def create_tickets(self, title, description, username, pool_id, expansion_names):
   """
   This get's launched as a background task because the Jira API calls take too long
   :return:
@@ -163,6 +163,8 @@ def create_tickets(title, description, username, pool_id, expansion_names):
   jira = JiraApi()
   jira.connect()
   try:
+    self.log_msg("starting to create crq")
+    self.log_msg("ready??")
     start, end = jira.next_immediate_window_dates()
     logging = jira.instance.issue('SVC-1020')
     crq = jira.instance.create_issue(
@@ -180,9 +182,10 @@ def create_tickets(title, description, username, pool_id, expansion_names):
       customfield_17679="Pool expansion required")
     jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_PLANNING'])
     jira.instance.create_issue_link('Relate', crq, logging)
+    self.log_msg("starting to create task")
     task = jira.instance.create_issue(
       issuetype={'name': 'MOP Task'},
-      assignee={'name': app.config['JIRA_USERNAME']},
+      assigne={'name': app.config['JIRA_USERNAME']},
       project=app.config['JIRA_CRQ_PROJECT'],
       summary='[auto-{}] expansion'.format(username),
       parent={'key': crq.key},
@@ -207,11 +210,11 @@ def create_tickets(title, description, username, pool_id, expansion_names):
         attachment=attachment_content)
     jira.approver_instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_APPROVED'])
   except Exception as e:
-    traceback.print_exc(file=sys.stdout)
     if crq is not None:
-      jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_REJECTED'])
+      jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_CANCELLED'])
     if task is not None:
-      jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_CRQ_REJECTED'])
+      jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_CANCELLED'])
+    raise e
 
 @vpool_bp.route('/vpool/expand/<int:pool_id>', methods=['GET', 'POST'])
 @login_required

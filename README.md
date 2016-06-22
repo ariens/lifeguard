@@ -22,3 +22,7 @@ Lifeguard allows administrators to provide 'zone' details for ON instances (user
 
 * Warning: this is alpha code.  While the existing functionality is currently stable the interfaces and code is being updated frequently and there are few unit tests.
 
+# Building 
+
+This project requires Python 3.4.  It may work with 3.5 however only 3.4 has been tested.  
+

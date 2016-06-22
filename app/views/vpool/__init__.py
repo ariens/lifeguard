@@ -185,7 +185,7 @@ def create_tickets(self, title, description, username, pool_id, expansion_names)
     self.log_msg("starting to create task")
     task = jira.instance.create_issue(
       issuetype={'name': 'MOP Task'},
-      assigne={'name': app.config['JIRA_USERNAME']},
+      assignee={'name': app.config['JIRA_USERNAME']},
       project=app.config['JIRA_CRQ_PROJECT'],
       summary='[auto-{}] expansion'.format(username),
       parent={'key': crq.key},
@@ -281,8 +281,11 @@ def view(pool_id):
     pool = VirtualMachinePool.query.get(pool_id)
     members = pool.get_memberships()
   except Exception as e:
-    traceback.print_exc(file=sys.stdout)
-    flash("There was an error fetching pool_id={}: {}".format(pool_id, e), category='danger')
+    jira = JiraApi()
+    jira.connect()
+    defect_ticket = jira.defect_for_exception("Pool view failed", e)
+    flash(Markup("There was an error fetching pool_id={}: {}, jira created for defect: {}".format(
+      pool_id, e, JiraApi.ticket_link(issue=defect_ticket))), category='danger')
     return redirect(url_for('cluster_bp.view', cluster_id=pool.cluster.id, zone_number=pool.cluster.zone.number))
   return render_template('vpool/view.html',
                          form=form,

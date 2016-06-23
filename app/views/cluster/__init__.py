@@ -3,21 +3,15 @@ from flask_login import login_required
 from app.views.cluster.models import Cluster, ClusterTemplateForm, CreateVmForm, GenerateTemplateForm
 from app.views.zone.models import Zone
 from app.views.vpool.models import VirtualMachinePool
-from app import app
+from app import app, jira
 from app.one import OneProxy
 from jinja2 import Environment, FunctionLoader
 from app.jira_api import JiraApi
 from app.views.template.models import ObjectLoader, VarParser
 from app.database import db_session
+import time
 
 cluster_bp = Blueprint('cluster_bp', __name__, template_folder='templates')
-
-def zone_template_loader(zone_number):
-  return Zone.query.get(zone_number).template
-
-
-def object_template_loader(obj):
-  return object.template
 
 @cluster_bp.route('/cluster/<int:zone_number>/<int:cluster_id>', methods=['GET'])
 @login_required
@@ -81,8 +75,6 @@ def vm_create(zone_number, cluster_id):
       one_proxy = OneProxy(zone.xmlrpc_uri, zone.session_string, verify_certs=False)
       env = Environment(loader=ObjectLoader())
       vm_template = env.from_string(cluster.template).render(cluster=cluster, vars=vars)
-      jira = JiraApi()
-      jira.connect()
       issue = jira.instance.create_issue(
         project=app.config['JIRA_PROJECT'],
         summary='[auto] VM instantiated: {}'.format(vars['hostname']),

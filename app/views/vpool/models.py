@@ -56,7 +56,7 @@ class VirtualMachinePool(Base):
     """
     Get the PoolMembership objects that are associated with the pool
     :param fetch_vms: If true, the vm attribute will be populated (incurs potentially
-    timely (1-2s) call to the ONE api
+    timely call to the ONE api
     :return:
     """
     memberships =  PoolMembership.query.filter_by(pool=self).all()
@@ -73,6 +73,13 @@ class VirtualMachinePool(Base):
     if match is None:
       raise Exception("Failed to parse pool name for hostname of number: {}".format(number))
     return '{}{}.{}'.format(match.group(1), number, match.group(2))
+
+  def num_outdated_vms(self, members):
+    num = 0
+    for m in members:
+      if not m.is_current():
+        num += 1
+    return num
 
   def num_legacy_vms(self, members):
     num = 0
@@ -160,10 +167,6 @@ class PoolMembership(Base):
       return 'delete'
     else:
       return "shutdown"
-
-  def is_legacy(self):
-    if self.template is None or self.template == '':
-      return True
 
   def is_done(self):
     if self.vm.state_id >= 4:

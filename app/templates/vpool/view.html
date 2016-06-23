@@ -11,7 +11,7 @@
     <h3>Pool Actions:</h3>
     <ul>
         {% set cleanuprequried = pool.num_done_vms(members) %}
-        {% set numlegacy = pool.num_legacy_vms(members) %}
+        {% set numoutdated = pool.num_outdated_vms(members) %}
         <li><a href="{{ url_for('vpool_bp.view', pool_id=pool.id) }}">View</a></li>
         <li><a href="{{ url_for('vpool_bp.edit', pool_id=pool.id) }}">Edit</a></li>
         <li><a href="{{ url_for('vpool_bp.delete', pool_id=pool.id) }}">Delete</a></li>
@@ -24,8 +24,8 @@
         {% if cleanuprequried > 0 %}
             <li><a href="{{ url_for('vpool_bp.remove_done', pool_id=pool.id) }}">Cleanup</a> <span class="red">({{ cleanuprequried }} VMs are done)</span></li>
         {% endif %}
-        {% if numlegacy > 0 %}
-            <li><a href="{{ url_for('vpool_bp.convert', pool_id=pool.id) }}">Convert</a> <span class="red">({{ numlegacy }} Legacy VMs )</span></li>
+        {% if numoutdated > 0 %}
+            <li><a href="{{ url_for('vpool_bp.update', pool_id=pool.id) }}">Update</a> <span class="red">({{ numoutdated }} Outdated VMs )</span></li>
         {% endif %}
     </ul>
     <h3>Cluster Pools:</h3>
@@ -78,8 +78,11 @@
                 <td class="data-cell">{{ member.vm.memory_gb() }}</td>
                 <td class="data-cell">{{ member.vm.ip_address }}</td>
                 <td class="data-cell">
-                    {% if member.is_legacy() %}<span class="red"><i>LEGACY</i></span>{% endif %}
-                    {% if member.is_done() %}<span class="red"><i>DONE</i></span>{% endif %}
+                    {% if member.is_done() %}
+                        <span class="red"><i>DONE</i></span>
+                    {% else %}
+                        {% if not member.is_current() %}<span class="red"><i>OUTDATED</i></span>{% endif %}
+                    {% endif %}
                 </td>
             </tr>
         {% endfor %}

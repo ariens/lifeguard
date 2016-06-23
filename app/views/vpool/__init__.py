@@ -1,20 +1,20 @@
-import sys, traceback, re, io, time
+import re
 from flask import request, redirect, url_for, render_template, flash, Blueprint, g, Markup
 from flask_login import login_required
 from jinja2 import Environment
 from datetime import datetime
 from flask_login import current_user
-from app import app
+from app import app, jira
 from app.database import db_session
 from app.one import OneProxy
-from app.views.task.models import Task, TaskResult, TaskThread
-from app.views.template.models import ObjectLoader
+from app.views.task.models import Task, TaskThread
+from app.views.template.models import ObjectLoader, VarParser
 from app.views.vpool.models import PoolMembership, VirtualMachinePool, PoolEditForm, GenerateTemplateForm, \
   ExpandException
+from app.views.vpool.tasks import plan_expansion
 from app.views.common.models import ActionForm
 from app.views.zone.models import Zone
 from app.views.cluster.models import Cluster
-from app.views.template.models import VarParser
 from app.jira_api import JiraApi
 
 vpool_bp = Blueprint('vpool_bp', __name__, template_folder='templates')
@@ -23,30 +23,10 @@ vpool_bp = Blueprint('vpool_bp', __name__, template_folder='templates')
 def get_current_user():
   g.user = current_user
 
-@vpool_bp.route('/vpool/test/<int:pool_id>', methods=['GET', 'POST'])
-@login_required
-def test(pool_id):
-  form = ActionForm()
-  jira = JiraApi()
-  jira.connect()
-  pool = VirtualMachinePool.query.get(pool_id)
-  return render_template('vpool/test.html', pool=pool)
-
-@vpool_bp.route('/vpool/convert/<int:pool_id>', methods=['GET', 'POST'])
-@login_required
-def convert(pool_id):
-  form = ActionForm()
-  jira = JiraApi()
-  jira.connect()
-  pool = VirtualMachinePool.query.get(pool_id)
-  return render_template('vpool/test.html', pool=pool)
-
 @vpool_bp.route('/vpool/remove_done/<int:pool_id>', methods=['GET', 'POST'])
 @login_required
 def remove_done(pool_id):
   form = ActionForm()
-  jira = JiraApi()
-  jira.connect()
   pool = one_proxy = members = None
   try:
     pool = VirtualMachinePool.query.get(pool_id)
@@ -96,8 +76,6 @@ def remove_done(pool_id):
 def shrink(pool_id):
   pool = shrink_vm_ids = None
   form = ActionForm()
-  jira = JiraApi()
-  jira.connect()
   try:
     pool = VirtualMachinePool.query.get(pool_id)
     members = pool.get_memberships()
@@ -144,78 +122,6 @@ def shrink(pool_id):
                          pool=pool,
                          shrink_members=shrink_members)
 
-def create_tickets(self, title, description, username, pool_id, expansion_names):
-  """
-  This get's launched as a background task because the Jira API calls take too long
-  :return:
-  """
-  from sqlalchemy import create_engine
-  from sqlalchemy.orm import scoped_session, sessionmaker
-
-  engine = create_engine(app.config['SQLALCHEMY_DATABASE_URI'])
-  Session = scoped_session(sessionmaker(autocommit=False,
-                                        autoflush=False,
-                                        bind=engine))
-  session = Session()
-  pool = VirtualMachinePool.query.get(pool_id)
-  session.merge(pool)
-  crq = task = jira = None
-  jira = JiraApi()
-  jira.connect()
-  try:
-    self.log_msg("starting to create crq")
-    self.log_msg("ready??")
-    start, end = jira.next_immediate_window_dates()
-    logging = jira.instance.issue('SVC-1020')
-    crq = jira.instance.create_issue(
-      project=app.config['JIRA_CRQ_PROJECT'],
-      issuetype={'name': 'Change Request'},
-      assignee={'name': app.config['JIRA_USERNAME']},
-      summary='[auto-{}] {}'.format(username, title),
-      description=description,
-      customfield_14530=start,
-      customfield_14531=end,
-      customfield_19031={'value': 'Maintenance'},
-      customfield_15152=[{'value': 'Global'}],
-      customfield_19430={'value': 'No conflict with any restrictions'},
-      customfield_14135={'value': 'IPG', 'child': {'value': 'IPG Big Data'}},
-      customfield_17679="Pool expansion required")
-    jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_PLANNING'])
-    jira.instance.create_issue_link('Relate', crq, logging)
-    self.log_msg("starting to create task")
-    task = jira.instance.create_issue(
-      issuetype={'name': 'MOP Task'},
-      assignee={'name': app.config['JIRA_USERNAME']},
-      project=app.config['JIRA_CRQ_PROJECT'],
-      summary='[auto-{}] expansion'.format(username),
-      parent={'key': crq.key},
-      customfield_14135={'value': 'IPG', 'child': {'value': 'IPG Big Data'}},
-      customfield_15150={'value': 'No'})
-    jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_PLANNING'])
-    jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_WRITTEN'])
-    jira.approver_instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_APPROVED'])
-    jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_PLANNED_CHANGE'])
-    env = Environment(loader=ObjectLoader())
-    for hostname in expansion_names:
-      vars = VarParser.parse_kv_strings_to_dict(
-        pool.cluster.zone.vars,
-        pool.cluster.vars,
-        pool.vars,
-        'hostname={}'.format(hostname))
-      vm_template = env.from_string(pool.template).render(pool=pool, vars=vars)
-      attachment_content = io.StringIO(vm_template)
-      jira.instance.add_attachment(
-        issue=task,
-        filename='{}.template'.format(hostname),
-        attachment=attachment_content)
-    jira.approver_instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_APPROVED'])
-  except Exception as e:
-    if crq is not None:
-      jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_CANCELLED'])
-    if task is not None:
-      jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_CANCELLED'])
-    raise e
-
 @vpool_bp.route('/vpool/expand/<int:pool_id>', methods=['GET', 'POST'])
 @login_required
 def expand(pool_id):
@@ -223,53 +129,50 @@ def expand(pool_id):
   form = ActionForm()
   try:
     pool = VirtualMachinePool.query.get(pool_id)
+    if request.method == 'POST' and request.form['action'] == 'cancel':
+      flash('Expansion of {} cancelled'.format(pool.name), category='info')
+      return redirect(url_for('vpool_bp.view', pool_id=pool.id))
+    elif request.method == 'POST' and request.form['action'] == 'confirm':
+        form_expansion_names = request.form.getlist('expansion_names')
     members = pool.get_memberships()
-    if request.method == 'POST' and form.validate():
-      form_expansion_names = request.form.getlist('expansion_names')
     expansion_names = pool.get_expansion_names(members, form_expansion_names)
   except Exception as e:
     flash("There was an error determining new names required for expansion: {}".format(e), category='danger')
     return redirect(url_for('vpool_bp.view', pool_id=pool.id))
   if request.method == 'POST' and form.validate():
-    crq = None
     try:
-      if request.form['action'] == 'cancel':
-        flash('Expansion of {} cancelled'.format(pool.name), category='info')
-        return redirect(url_for('vpool_bp.view', pool_id=pool.id))
-      elif request.form['action'] == 'confirm':
-        if True:
-          title = 'Pool Expansion: {} ({} to {})'.format(
-                current_user.username, pool.name, len(members), pool.cardinality)
-          description = "Pool expansion triggered that will instantiate {} new VM(s): \n\n*{}".format(
-                len(expansion_names),
-                "\n*".join(expansion_names))
-          task = Task(
-            name="create expansion change request tickets",
-            description="{}\n{}".format(title, description),
-            username=current_user.username)
-          db_session.add(task)
-          db_session.commit()
-          task_thread = TaskThread(task=task, run_function=create_tickets,
-                                   title=title,
-                                   description=description,
-                                   username=current_user.username,
-                                   pool_id=pool_id,
-                                   expansion_names=expansion_names)
-          task_thread.start()
-          flash(Markup("Started background task: <a href='{}'>TASK-{}".format(
-            url_for('task_bp.view', task_id=task.id), task.id)))
+      if request.form['action'] == 'confirm':
+        title = 'Pool Expansion: {} ({} to {})'.format(
+              current_user.username, pool.name, len(members), pool.cardinality)
+        description = "Pool expansion triggered that will instantiate {} new VM(s): \n\n*{}".format(
+              len(expansion_names),
+              "\n*".join(expansion_names))
+        task = Task(
+          name="create expansion change request tickets",
+          description="{}\n{}".format(title, description),
+          username=current_user.username)
+        db_session.add(task)
+        db_session.commit()
+        task_thread = TaskThread(task=task, run_function=plan_expansion,
+                                 title=title,
+                                 description=description,
+                                 username=current_user.username,
+                                 pool_id=pool_id,
+                                 expansion_names=expansion_names)
+        task_thread.start()
+        flash(Markup("Started background task: <a href='{}'>TASK-{}".format(
+          url_for('task_bp.view', task_id=task.id), task.id)))
       return redirect(url_for('vpool_bp.view', pool_id=pool.id))
     except Exception as e:
-      jira = JiraApi()
-      jira.connect()
       defect_ticket = jira.defect_for_exception("Pool Expansion Ticket Failed", e)
       flash(Markup('Error expanding pool {} (defect ticket contains exception: {})'.format(
         pool.name, JiraApi.ticket_link(defect_ticket))), category='danger')
       return redirect(url_for('vpool_bp.view', pool_id=pool.id))
   return render_template('vpool/expand.html',
-                       form=form,
-                       pool=pool,
-                       expansion_names=expansion_names)
+                         form=form,
+                         members=members,
+                         pool=pool,
+                         expansion_names=expansion_names)
 
 @vpool_bp.route('/vpool/view/<int:pool_id>', methods=['GET', 'POST'])
 @login_required
@@ -281,14 +184,28 @@ def view(pool_id):
     pool = VirtualMachinePool.query.get(pool_id)
     members = pool.get_memberships()
   except Exception as e:
-    jira = JiraApi()
-    jira.connect()
     defect_ticket = jira.defect_for_exception("Pool view failed", e)
     flash(Markup("There was an error fetching pool_id={}: {}, jira created for defect: {}".format(
       pool_id, e, JiraApi.ticket_link(issue=defect_ticket))), category='danger')
     return redirect(url_for('cluster_bp.view', cluster_id=pool.cluster.id, zone_number=pool.cluster.zone.number))
   return render_template('vpool/view.html',
                          form=form,
+                         pool=pool,
+                         members=members)
+
+@vpool_bp.route('/vpool/update/<int:pool_id>', methods=['GET', 'POST'])
+@login_required
+def update(pool_id):
+  pool = members = None
+  try:
+    pool = VirtualMachinePool.query.get(pool_id)
+    members = pool.get_memberships()
+  except Exception as e:
+    defect_ticket = jira.defect_for_exception("Generating update page failed", e)
+    flash(Markup("There was an error fetching pool_id={}: {}, jira created for defect: {}".format(
+      pool_id, e, JiraApi.ticket_link(issue=defect_ticket))), category='danger')
+    return redirect(url_for('cluster_bp.view', cluster_id=pool.cluster.id, zone_number=pool.cluster.zone.number))
+  return render_template('vpool/update.html',
                          pool=pool,
                          members=members)
 

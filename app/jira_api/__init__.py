@@ -40,7 +40,7 @@ class JiraApi():
     now = pytz.utc.localize(datetime.utcnow()).astimezone(tz)
     return now.strftime(JiraApi.str_jira_scheduled)
 
-  def connect(self):
+  def new_connect(self):
     options = {'server': app.config['JIRA_HOSTNAME'], 'verify': False, 'check_update': False}
     self.instance = JIRA(options,
                 basic_auth=(app.config['JIRA_USERNAME'], app.config['JIRA_PASSWORD']))

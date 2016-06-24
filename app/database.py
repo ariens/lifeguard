@@ -4,12 +4,21 @@ from sqlalchemy.ext.declarative import declarative_base
 
 from app import app
 
+#engine = create_engine(app.config['SQLALCHEMY_DATABASE_URI'])
+#db_session = scoped_session(sessionmaker(autocommit=False,
+#                                         autoflush=False,
+#                                         bind=engine))
+
 engine = create_engine(app.config['SQLALCHEMY_DATABASE_URI'])
-db_session = scoped_session(sessionmaker(autocommit=False,
-                                         autoflush=False,
-                                         bind=engine))
+Session = scoped_session(sessionmaker(autocommit=False,
+                                      autoflush=False,
+                                      bind=engine))
+db_session = Session()
 Base = declarative_base()
-Base.query = db_session.query_property()
+Base.query = Session.query_property()
+
+def remove_session():
+  Session.remove()
 
 def init_db():
     from app.views.auth.models import User

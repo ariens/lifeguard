@@ -4,22 +4,22 @@ from app.views.vpool.models import VirtualMachinePool
 from app.jira_api import JiraApi
 from jinja2 import Environment
 from app.views.template.models import VarParser, ObjectLoader
+from app.views.vpool.models import PoolTicket, PoolTicketActions
 
 def plan_expansion(self, title, description, username, pool_id, expansion_names):
   """
   This get's launched as a background task because the Jira API calls take too long
   :return:
   """
-  from sqlalchemy import create_engine
-  from sqlalchemy.orm import scoped_session, sessionmaker
+  #from sqlalchemy import create_engine
+  #from sqlalchemy.orm import scoped_session, sessionmaker
 
-  engine = create_engine(app.config['SQLALCHEMY_DATABASE_URI'])
-  Session = scoped_session(sessionmaker(autocommit=False,
-                                        autoflush=False,
-                                        bind=engine))
-  session = Session()
+  #engine = create_engine(app.config['SQLALCHEMY_DATABASE_URI'])
+  #Session = scoped_session(sessionmaker(autocommit=False,
+  #                                      autoflush=False,
+  #                                      bind=engine))
+  #session = Session()
   pool = VirtualMachinePool.query.get(pool_id)
-  session.merge(pool)
   logging = crq = task = None
   try:
     start, end = jira.next_immediate_window_dates()
@@ -52,7 +52,7 @@ def plan_expansion(self, title, description, username, pool_id, expansion_names)
       customfield_15150={'value': 'No'})
     self.log_msg("Created task: {}".format(task.key))
     jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_PLANNING'])
-    self.log_msg("Transition {} to planning".format(task.key))
+    self.log_msg("Transitioned {} to planning".format(task.key))
     env = Environment(loader=ObjectLoader())
     for hostname in expansion_names:
       vars = VarParser.parse_kv_strings_to_dict(
@@ -75,9 +75,20 @@ def plan_expansion(self, title, description, username, pool_id, expansion_names)
     self.log_msg("Transitioned task {} to approved".format(task.key))
     jira.approver_instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_APPROVED'])
     self.log_msg("Transitioned change request {} to approved".format(crq.key))
+    self.log_msg("task ID {}".format(self.task.id))
+    db_ticket = PoolTicket(
+      pool=pool,
+      action_id=PoolTicketActions.expand.value,
+      ticket_key=crq.key,
+      task_id=self.task.id)
+    self.db_session.merge(db_ticket)
+    self.db_session.commit()
+    self.log_msg("Created PoolTicket to assocation CRQ {} to pool".format(crq.key))
   except Exception as e:
-    if crq is not None:
-      jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_CANCELLED'])
     if task is not None:
       jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_CANCELLED'])
+      self.log_err("Transitioned task {} to cancelled".format(task.key))
+    if crq is not None:
+      jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_CANCELLED'])
+      self.log_err("Transitioned change request {} to cancelled".format(crq.key))
     raise e

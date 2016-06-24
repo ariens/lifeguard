@@ -10,6 +10,7 @@ from  jinja2 import Environment
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime
 from sqlalchemy.orm import relationship, backref
 import re
+from enum import Enum
 
 
 class ExpandException(Exception):
@@ -94,6 +95,9 @@ class VirtualMachinePool(Base):
       if m.is_done():
         num += 1
     return num
+
+  def get_tickets(self):
+    return PoolTicket.query.filter_by(pool=self).all()
 
   def get_cluster(self):
     return Cluster.query.filter_by(zone_number=self.zone_number, id=self.cluster_id).first()
@@ -207,6 +211,32 @@ class PoolMembership(Base):
   def __repr__(self):
     self.__str__()
 
+
+class PoolTicketActions(Enum):
+  expand = 0
+  shrink = 1
+  update = 2
+
+
+class PoolTicket(Base):
+  __tablename__ = 'pool_ticket'
+  pool = relationship('VirtualMachinePool', backref=backref('pool_ticket_virtual_machine_pool', lazy='dynamic'))
+  pool_id = Column(Integer, ForeignKey('virtual_machine_pool.id'), primary_key=True)
+  ticket_key = Column(String(17), primary_key=True)
+  task = relationship('Task', backref=backref('task', lazy='dynamic'))
+  task_id = Column(Integer, ForeignKey('task.id'))
+  action_id = Column(Integer, nullable=False)
+
+  def __init__(self, pool=None, pool_id=None, ticket_key=None, task=None, task_id=None, action_id=None):
+    self.pool = pool
+    self.pool_id = pool_id
+    self.ticket_key = ticket_key
+    self.task = task
+    self.task_id = task_id
+    self.action_id = action_id
+
+  def action_name(self):
+    return PoolTicketActions(self.action_id).name
 
 class PoolEditForm(Form):
   name = StringField('Name', [InputRequired()])

@@ -27,5 +27,5 @@ def list():
   except Exception as e:
     traceback.print_exc(file=sys.stdout)
     flash("There was an error fetching tasks: {}".format(e), category='danger')
-    return redirect(url_for('auth_bp.home'))
+    return redirect(url_for('auth.home'))
   return render_template('task/list.html', tasks=tasks)

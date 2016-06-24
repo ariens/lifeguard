@@ -1,4 +1,4 @@
-from app import app
+from app import app, jira
 from app.database import Base
 from enum import Enum
 from threading import Thread
@@ -74,7 +74,7 @@ class Task(Base):
     return self.status == TaskStatus.finished.value
 
   def get_elapsed(self):
-    if self.status == TaskStatus.pending.value:
+    if self.status is None or self.status == TaskStatus.pending.value:
       return None
     end = self.end_time if self.end_time is not None else datetime.utcnow()
     m, s = divmod((end - self.start_time).total_seconds(), 60)
@@ -94,12 +94,8 @@ class TaskThread(Thread):
     self.log = log
     self.task = task
     self.run_function = run_function
-    engine = create_engine(app.config['SQLALCHEMY_DATABASE_URI'])
-    Session = scoped_session(sessionmaker(autocommit=False,
-                                         autoflush=False,
-                                         bind=engine))
-    self.db_session = Session()
-    self.db_session.merge(self.task)
+    print("TaskThread.__init__() current thread name: {}, ident: {}".format(
+      threading.current_thread().getName(), threading.get_ident()))
     super().__init__(target=self.run_task, kwargs=kwargs)
 
   def log_msg(self, raw_msg):
@@ -111,11 +107,29 @@ class TaskThread(Thread):
     else:
       self.log = msg
 
+  def log_err(self, raw_msg):
+    d = datetime.utcnow().strftime(TaskThread.fmt)
+    msg = "ERROR> {}: {}".format(d, raw_msg)
+    if self.log is not None:
+      self.log += "\n"
+      self.log += msg
+    else:
+      self.log = msg
+
   def run_task(self, **kwargs):
+    print("run_task() current thread name: {}, ident: {}".format(
+      threading.current_thread().getName(), threading.get_ident()))
+    engine = create_engine(app.config['SQLALCHEMY_DATABASE_URI'])
+    Session = scoped_session(sessionmaker(autocommit=False,
+                                         autoflush=False,
+                                         bind=engine))
+    self.db_session = Session()
     self.task.start_time = datetime.utcnow()
     self.task.ident = threading.get_ident()
     self.task.status = TaskStatus.running.value
     self.db_session.merge(self.task)
+    self.db_session.flush()
+    print("self.task.id: {}".format(self.task.id))
     self.db_session.commit()
     try:
       self.run_function(self, **kwargs)
@@ -136,11 +150,9 @@ class TaskThread(Thread):
       self.db_session.merge(self.task)
       print("task result: {}".format(self.task.result))
       self.db_session.commit()
-      jira = JiraApi()
-      jira.connect()
       self.task.defect_ticket = jira.defect_for_exception(
         "Background Task Error: {}".format(self.task.name), e, username=self.task.username).key
       self.db_session.merge(self.task)
       self.db_session.commit()
       print("task result: {}".format(self.task.result))
-
+    Session.remove()

@@ -152,6 +152,7 @@ def expand(pool_id):
           description="{}\n{}".format(title, description),
           username=current_user.username)
         db_session.add(task)
+        db_session.flush()
         db_session.commit()
         task_thread = TaskThread(task=task, run_function=plan_expansion,
                                  title=title,

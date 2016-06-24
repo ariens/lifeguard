@@ -12,12 +12,12 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'auth.login'
 
-from app.database import db_session, init_db
+from app.database import db_session, init_db, remove_session
 init_db()
 
 @app.teardown_appcontext
 def shutdown_session(exception=None):
-  db_session.remove()
+  remove_session()
 
 from app.views.auth import auth_bp
 app.register_blueprint(auth_bp)

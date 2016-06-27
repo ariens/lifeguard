@@ -8,7 +8,7 @@ from app.one import OneProxy
 from jinja2 import Environment, FunctionLoader
 from app.jira_api import JiraApi
 from app.views.template.models import ObjectLoader, VarParser
-from app.database import db_session
+from app.database import Session
 import time
 
 cluster_bp = Blueprint('cluster_bp', __name__, template_folder='templates')
@@ -36,8 +36,9 @@ def edit_template(zone_number, cluster_id):
       try:
         cluster.template = request.form['template']
         cluster.vars = request.form['vars']
-        db_session.add(cluster)
-        db_session.commit()
+        Session()
+        Session.add(cluster)
+        Session.commit()
         flash('Successfully saved cluster template for {} (ID={}).'
               .format(cluster.name, cluster.id), 'success')
         return redirect(url_for('cluster_bp.view', zone_number=zone.number, cluster_id=cluster.id))

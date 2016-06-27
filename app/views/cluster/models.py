@@ -9,7 +9,7 @@ from sqlalchemy.orm import relationship, backref
 class Cluster(Base):
   __tablename__ = 'cluster'
   id = Column(Integer, primary_key=True)
-  zone = relationship('Zone', backref=backref('zone_ref', lazy='dynamic'))
+  zone = relationship('Zone', backref=backref('zone_ref'))
   zone_number = Column(Integer, ForeignKey('zone.number'), primary_key=True)
   name = Column(String(100), unique=True, nullable=False)
   template = Column(Text())

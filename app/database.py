@@ -4,21 +4,9 @@ from sqlalchemy.ext.declarative import declarative_base
 
 from app import app
 
-#engine = create_engine(app.config['SQLALCHEMY_DATABASE_URI'])
-#db_session = scoped_session(sessionmaker(autocommit=False,
-#                                         autoflush=False,
-#                                         bind=engine))
-
 engine = create_engine(app.config['SQLALCHEMY_DATABASE_URI'])
-Session = scoped_session(sessionmaker(autocommit=False,
-                                      autoflush=False,
-                                      bind=engine))
-db_session = Session()
-Base = declarative_base()
-Base.query = Session.query_property()
-
-def remove_session():
-  Session.remove()
+session_factory = sessionmaker(bind=engine)
+Session = scoped_session(session_factory)
 
 def init_db():
     from app.views.auth.models import User
@@ -28,3 +16,6 @@ def init_db():
     from app.views.vpool.models import PoolMembership
     from app.views.zone.models import Zone
     Base.metadata.create_all(bind=engine)
+
+Base = declarative_base()
+Base.query = Session.query_property()

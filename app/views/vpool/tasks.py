@@ -1,35 +1,47 @@
 import io
+from app.database import Session
+import random
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, scoped_session
 from app import app, jira
+from app.views.task.models import Task
 from app.views.vpool.models import VirtualMachinePool
 from app.jira_api import JiraApi
 from jinja2 import Environment
 from app.views.template.models import VarParser, ObjectLoader
 from app.views.vpool.models import PoolTicket, PoolTicketActions
 
-def plan_expansion(self, title, description, username, pool_id, expansion_names):
+
+def plan_expansion(self, pool, expansion_names):
   """
   This get's launched as a background task because the Jira API calls take too long
   :return:
   """
-  #from sqlalchemy import create_engine
-  #from sqlalchemy.orm import scoped_session, sessionmaker
-
-  #engine = create_engine(app.config['SQLALCHEMY_DATABASE_URI'])
-  #Session = scoped_session(sessionmaker(autocommit=False,
-  #                                      autoflush=False,
-  #                                      bind=engine))
-  #session = Session()
-  pool = VirtualMachinePool.query.get(pool_id)
-  logging = crq = task = None
+  task = crq = None
   try:
+    print("the pool name is {}".format(pool.name))
+    pool = Session.merge(pool)
+    #this_task = db_session.merge(db_session.query(Task).get(self.task.id))
+    #key = "DAVE-{}".format(random.randrange(0, 1002, 2))
+    #db_ticket = PoolTicket(
+    #  pool=pool,
+    #  action_id=PoolTicketActions.expand.value,
+    #  ticket_key=key,
+    #  task=self.task)
+    #Session.add(db_ticket)
+    #Session.commit()
+    #self.log_msg("done faking ticket for {}".format(key))
+    #Session.remove()
+    #return
     start, end = jira.next_immediate_window_dates()
     logging = jira.instance.issue('SVC-1020')
     crq = jira.instance.create_issue(
       project=app.config['JIRA_CRQ_PROJECT'],
       issuetype={'name': 'Change Request'},
       assignee={'name': app.config['JIRA_USERNAME']},
-      summary='[auto-{}] {}'.format(username, title),
-      description=description,
+      summary='[auto-{}] {}'.format(self.task.username, self.task.name),
+      description=self.task.description,
       customfield_14530=start,
       customfield_14531=end,
       customfield_19031={'value': 'Maintenance'},
@@ -46,7 +58,7 @@ def plan_expansion(self, title, description, username, pool_id, expansion_names)
       issuetype={'name': 'MOP Task'},
       assignee={'name': app.config['JIRA_USERNAME']},
       project=app.config['JIRA_CRQ_PROJECT'],
-      summary='[auto-{}] expansion'.format(username),
+      summary='[auto-{}] expansion'.format(self.task.username),
       parent={'key': crq.key},
       customfield_14135={'value': 'IPG', 'child': {'value': 'IPG Big Data'}},
       customfield_15150={'value': 'No'})
@@ -75,19 +87,25 @@ def plan_expansion(self, title, description, username, pool_id, expansion_names)
     self.log_msg("Transitioned task {} to approved".format(task.key))
     jira.approver_instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_APPROVED'])
     self.log_msg("Transitioned change request {} to approved".format(crq.key))
-    self.log_msg("task ID {}".format(self.task.id))
+    self.log_msg("Task ID {}".format(self.task.id))
     db_ticket = PoolTicket(
       pool=pool,
       action_id=PoolTicketActions.expand.value,
       ticket_key=crq.key,
-      task_id=self.task.id)
-    self.db_session.merge(db_ticket)
-    self.db_session.commit()
-    self.log_msg("Created PoolTicket to assocation CRQ {} to pool".format(crq.key))
+      task=self.task)
+    Session.add(db_ticket)
+    Session.commit()
+    Session.remove()
   except Exception as e:
     if task is not None:
       jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_CANCELLED'])
       self.log_err("Transitioned task {} to cancelled".format(task.key))
+      transitions = jira.instance.transitions(task)
+      self.log_err("After cancelling task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
+      jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_CANCELLED'])
+      self.log_err("Transition task {} to cancelled (again)".format(task.key))
+      transitions = jira.instance.transitions(task)
+      self.log_err("After second cancellation of task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
     if crq is not None:
       jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_CANCELLED'])
       self.log_err("Transitioned change request {} to cancelled".format(crq.key))

@@ -1,7 +1,7 @@
 from flask_wtf import Form
 from wtforms import StringField, PasswordField, TextAreaField
 from wtforms.validators import InputRequired
-from app.database import Base, db_session
+from app.database import Base
 from sqlalchemy import Column, Integer, String, Text
 from sqlalchemy.orm import relationship, backref
 

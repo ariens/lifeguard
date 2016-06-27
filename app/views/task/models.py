@@ -1,12 +1,12 @@
 from app import app, jira
-from app.database import Base
+from app.database import Base, Session
 from enum import Enum
 from threading import Thread
 import threading
 from datetime import datetime
 from app.jira_api import JiraApi
 import traceback, sys
-from sqlalchemy import Column, Integer, String, DateTime, Text, create_engine
+from sqlalchemy import Column, Integer, String, DateTime, Text, create_engine, inspect
 from sqlalchemy.orm import scoped_session, sessionmaker
 
 
@@ -86,20 +86,18 @@ class Task(Base):
     return '{} secs'.format(s)
 
 class TaskThread(Thread):
-  fmt = "%Y-%m-%dT%H:%M:%S.%f%z"
-
-  def __init__(self, task, run_function, log=None, **kwargs):
-    if None in [task, run_function]:
-      raise Exception("Required parameter(s) is None: task={}, run_function={}".format(task, run_function))
+  log_date_fmt = "%Y-%m-%dT%H:%M:%S.%f%z"
+  def __init__(self, task_id, run_function, log=None, **kwargs):
+    if None in [task_id, run_function]:
+      raise Exception("Required parameter(s) is None: task={}, run_function={}".format(task_id, run_function))
     self.log = log
-    self.task = task
+    self.task = None
+    self.task_id = task_id
     self.run_function = run_function
-    print("TaskThread.__init__() current thread name: {}, ident: {}".format(
-      threading.current_thread().getName(), threading.get_ident()))
     super().__init__(target=self.run_task, kwargs=kwargs)
 
   def log_msg(self, raw_msg):
-    d = datetime.utcnow().strftime(TaskThread.fmt)
+    d = datetime.utcnow().strftime(TaskThread.log_date_fmt)
     msg = "{}: {}".format(d, raw_msg)
     if self.log is not None:
       self.log += "\n"
@@ -108,8 +106,8 @@ class TaskThread(Thread):
       self.log = msg
 
   def log_err(self, raw_msg):
-    d = datetime.utcnow().strftime(TaskThread.fmt)
-    msg = "ERROR> {}: {}".format(d, raw_msg)
+    d = datetime.utcnow().strftime(TaskThread.log_date_fmt)
+    msg = "{} ERROR: {}".format(d, raw_msg)
     if self.log is not None:
       self.log += "\n"
       self.log += msg
@@ -117,42 +115,31 @@ class TaskThread(Thread):
       self.log = msg
 
   def run_task(self, **kwargs):
-    print("run_task() current thread name: {}, ident: {}".format(
-      threading.current_thread().getName(), threading.get_ident()))
-    engine = create_engine(app.config['SQLALCHEMY_DATABASE_URI'])
-    Session = scoped_session(sessionmaker(autocommit=False,
-                                         autoflush=False,
-                                         bind=engine))
-    self.db_session = Session()
+    self.task = Task.query.get(self.task_id)
     self.task.start_time = datetime.utcnow()
     self.task.ident = threading.get_ident()
     self.task.status = TaskStatus.running.value
-    self.db_session.merge(self.task)
-    self.db_session.flush()
-    print("self.task.id: {}".format(self.task.id))
-    self.db_session.commit()
+    Session.merge(self.task)
+    Session.commit()
     try:
       self.run_function(self, **kwargs)
       self.task.log = self.log
       self.task.end_time = datetime.utcnow()
       self.task.status = TaskStatus.finished.value
       self.task.result = TaskResult.success.value
-      self.db_session.merge(self.task)
-      self.db_session.commit()
+      Session.merge(self.task)
+      Session.commit()
     except Exception as e:
       self.task.log = self.log
       self.task.tb = traceback.format_exc()
       self.task.end_time = datetime.utcnow()
       self.task.status = TaskStatus.finished.value
       self.task.result = TaskResult.fail.value
-      print("task result: {}".format(self.task.result))
-      # Merge/commit in case the Jira defect ticket fails
-      self.db_session.merge(self.task)
-      print("task result: {}".format(self.task.result))
-      self.db_session.commit()
-      self.task.defect_ticket = jira.defect_for_exception(
-        "Background Task Error: {}".format(self.task.name), e, username=self.task.username).key
-      self.db_session.merge(self.task)
-      self.db_session.commit()
-      print("task result: {}".format(self.task.result))
+      Session.merge(self.task)
+      Session.commit()
+      # Previous commit exists in case an exception is raised creating defect ticket
+      #self.task.defect_ticket = jira.defect_for_exception(
+      #  "Background Task Error: {}".format(self.task.name), e, username=self.task.username).key
+      #db_session.merge(self.task)
+      #db_session.commit()
     Session.remove()

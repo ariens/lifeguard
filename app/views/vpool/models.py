@@ -3,7 +3,7 @@ from wtforms import TextAreaField, StringField
 from wtforms.validators import InputRequired
 from app.views.cluster.models import Cluster
 from app.views.template.models import VarParser, ObjectLoader
-from app.database import Base, db_session
+from app.database import Base, Session
 from app.one import OneProxy
 from app.one import INCLUDING_DONE
 from  jinja2 import Environment
@@ -144,10 +144,10 @@ class VirtualMachinePool(Base):
 
   @staticmethod
   def get_all(cluster):
-    return db_session.query(VirtualMachinePool).filter_by(cluster=cluster)
+    return Session().query(VirtualMachinePool).filter_by(cluster=cluster)
 
   def get_peer_pools(self):
-    return db_session.query(VirtualMachinePool).filter_by(cluster=self.cluster)
+    return Session().query(VirtualMachinePool).filter_by(cluster=self.cluster)
 
 
 class PoolMembership(Base):
@@ -187,7 +187,7 @@ class PoolMembership(Base):
 
   @staticmethod
   def get_all(zone):
-    return db_session.query(PoolMembership).join(
+    return Session().query(PoolMembership).join(
       PoolMembership.pool, aliased=True).filter_by(zone=zone)
 
   def parse_number(self):
@@ -220,16 +220,16 @@ class PoolTicketActions(Enum):
 
 class PoolTicket(Base):
   __tablename__ = 'pool_ticket'
-  pool = relationship('VirtualMachinePool', backref=backref('pool_ticket_virtual_machine_pool', lazy='dynamic'))
+  pool = relationship('VirtualMachinePool', backref=backref('pool_tickets'), cascade='all')
   pool_id = Column(Integer, ForeignKey('virtual_machine_pool.id'), primary_key=True)
   ticket_key = Column(String(17), primary_key=True)
-  task = relationship('Task', backref=backref('task', lazy='dynamic'))
+  task = relationship('Task', backref=backref('pool_tickets'), cascade='all')
   task_id = Column(Integer, ForeignKey('task.id'))
   action_id = Column(Integer, nullable=False)
 
   def __init__(self, pool=None, pool_id=None, ticket_key=None, task=None, task_id=None, action_id=None):
-    self.pool = pool
     self.pool_id = pool_id
+    self.pool = pool
     self.ticket_key = ticket_key
     self.task = task
     self.task_id = task_id

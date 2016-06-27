@@ -5,7 +5,7 @@ from jinja2 import Environment
 from datetime import datetime
 from flask_login import current_user
 from app import app, jira
-from app.database import db_session
+from app.database import Session
 from app.one import OneProxy
 from app.views.task.models import Task, TaskThread
 from app.views.template.models import ObjectLoader, VarParser
@@ -42,6 +42,7 @@ def remove_done(pool_id):
       elif request.form['action'] == 'confirm':
         vm_ids_to_delete = [int(id) for id in request.form.getlist('done_vm_ids')]
         delete_members = []
+        Session()
         for m in members:
           if m.vm.id in vm_ids_to_delete:
             delete_members.append(m)
@@ -57,8 +58,8 @@ def remove_done(pool_id):
         one_proxy = OneProxy(pool.cluster.zone.xmlrpc_uri, pool.cluster.zone.session_string, verify_certs=False)
         for m in delete_members:
           one_proxy.action_vm(m.remove_cmd(), m.vm.id)
-          db_session.delete(m)
-        db_session.commit()
+          Session.delete(m)
+        Session.commit()
         flash('Deleted {} done VMs to cleanup pool {}'.format(len(delete_members), pool.name))
         jira.resolve(delete_ticket)
         return redirect(url_for('vpool_bp.view', pool_id=pool.id))
@@ -93,6 +94,7 @@ def shrink(pool_id):
         flash('Shrinking {} cancelled'.format(pool.name), category='info')
         return redirect(url_for('vpool_bp.view', pool_id=pool.id))
       elif request.form['action'] == 'confirm':
+        Session()
         vm_ids_to_shutdown = request.form.getlist('shrink_vm_ids')
         shrink_ticket = jira.instance.create_issue(
           project=app.config['JIRA_PROJECT'],
@@ -107,8 +109,8 @@ def shrink(pool_id):
         one_proxy = OneProxy(pool.cluster.zone.xmlrpc_uri, pool.cluster.zone.session_string, verify_certs=False)
         for m in shrink_members:
           one_proxy.action_vm(m.remove_cmd(), m.vm.id)
-          db_session.delete(m)
-        db_session.commit()
+          Session.delete(m)
+        Session.commit()
         jira.resolve(shrink_ticket)
         flash('Shutdown {} VMs to shrink pool {} to cardinality of {}'.format(
           len(shrink_members), pool.name, pool.cardinality))
@@ -141,6 +143,7 @@ def expand(pool_id):
     return redirect(url_for('vpool_bp.view', pool_id=pool.id))
   if request.method == 'POST' and form.validate():
     try:
+      from app.views.vpool.models import PoolTicket, PoolTicketActions
       if request.form['action'] == 'confirm':
         title = 'Pool Expansion: {} ({} to {})'.format(
               current_user.username, pool.name, len(members), pool.cardinality)
@@ -151,20 +154,19 @@ def expand(pool_id):
           name="create expansion change request tickets",
           description="{}\n{}".format(title, description),
           username=current_user.username)
-        db_session.add(task)
-        db_session.flush()
-        db_session.commit()
-        task_thread = TaskThread(task=task, run_function=plan_expansion,
-                                 title=title,
-                                 description=description,
-                                 username=current_user.username,
-                                 pool_id=pool_id,
+        Session()
+        Session.add(task)
+        Session.commit()
+        task_thread = TaskThread(task_id=task.id,
+                                 run_function=plan_expansion,
+                                 pool=pool,
                                  expansion_names=expansion_names)
         task_thread.start()
         flash(Markup("Started background task: <a href='{}'>TASK-{}".format(
           url_for('task_bp.view', task_id=task.id), task.id)))
       return redirect(url_for('vpool_bp.view', pool_id=pool.id))
     except Exception as e:
+      raise e
       defect_ticket = jira.defect_for_exception("Pool Expansion Ticket Failed", e)
       flash(Markup('Error expanding pool {} (defect ticket contains exception: {})'.format(
         pool.name, JiraApi.ticket_link(defect_ticket))), category='danger')
@@ -228,10 +230,11 @@ def delete(pool_id):
       elif request.form['action'] == 'confirm':
         redirect_url = url_for('cluster_bp.view', zone_number=pool.cluster.zone.number, cluster_id=pool.cluster.id)
         members = pool.get_memberships()
+        Session()
         for member in members:
-          db_session.delete(member)
-        db_session.delete(pool)
-        db_session.commit()
+          Session.delete(member)
+        Session.delete(pool)
+        Session.commit()
         flash('Deleted pool {} with {} memberse'.format(pool.name, len(members)), category='success')
         return redirect(url_for('cluster_bp.view', zone_number=pool.cluster.zone.number, cluster_id=pool.cluster.id))
     except Exception as e:
@@ -268,8 +271,9 @@ def edit(pool_id):
         if not cardinality_pattern.fullmatch(request.form['cardinality']):
           raise Exception("Cardinality {} not numeric".format(request.form['cardinality']))
         pool.cardinality = request.form['cardinality']
-        db_session.add(pool)
-        db_session.commit()
+        Session()
+        Session.add(pool)
+        Session.commit()
         flash('Successfully saved pool template for {} (ID={}).'
               .format(pool.name, pool.id), 'success')
         return redirect(url_for('vpool_bp.view', pool_id=pool.id))
@@ -330,6 +334,7 @@ def assign_to_pool(zone_number, cluster_id):
   cluster = None
   memberships = {}
   try:
+    Session()
     zone = Zone.query.get(zone_number)
     cluster = Cluster.query.filter_by(zone=zone, id=cluster_id).first()
     one_proxy = OneProxy(zone.xmlrpc_uri, zone.session_string, verify_certs=False)
@@ -374,8 +379,8 @@ def assign_to_pool(zone_number, cluster_id):
       else:
         pool = VirtualMachinePool.query.get(request.form['pool_id'])
         for vm_id in selected_vm_ids.keys():
-          db_session.add(PoolMembership(pool=pool, vm_id=vm_id, date_added=datetime.utcnow()))
-          db_session.commit()
+          Session.add(PoolMembership(pool=pool, vm_id=vm_id, date_added=datetime.utcnow()))
+          Session.commit()
         flash(Markup('Successfully added {} members to pool <a href="{}">{}</a>'.format(
           len(selected_vm_ids),
           url_for('vpool_bp.view', pool_id=pool.id),
@@ -390,19 +395,19 @@ def assign_to_pool(zone_number, cluster_id):
           cluster_id=cluster.id,
           zone_number=zone.number,
           cardinality=len(selected_vm_ids))
-        db_session.add(pool)
-        db_session.flush()
+        Session.add(pool)
+        Session.flush()
         for vm_id in selected_vm_ids.keys():
           membership = PoolMembership(pool=pool, vm_id=vm_id, date_added=datetime.utcnow())
           memberships[vm_id] = membership
-          db_session.add(membership)
-        db_session.flush()
-        db_session.commit()
+          Session.add(membership)
+        Session.flush()
+        Session.commit()
         flash(Markup('Successfully created <a href="{}">{}</a> with {} pool members'.format(
           url_for('vpool_bp.view', pool_id=pool.id),
           pool.name, len(selected_vm_ids))), category='success')
       except Exception as e:
-        db_session.rollback()
+        Session.rollback()
         flash('Error creating your new pool: {}'.format(e), category='danger')
   return render_template(
     'vpool/assign_to_pool.html',

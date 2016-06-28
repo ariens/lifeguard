@@ -5,11 +5,9 @@ from app.views.zone.models import Zone
 from app.views.vpool.models import VirtualMachinePool
 from app import app, jira
 from app.one import OneProxy
-from jinja2 import Environment, FunctionLoader
-from app.jira_api import JiraApi
+from jinja2 import Environment
 from app.views.template.models import ObjectLoader, VarParser
 from app.database import Session
-import time
 
 cluster_bp = Blueprint('cluster_bp', __name__, template_folder='templates')
 
@@ -36,7 +34,6 @@ def edit_template(zone_number, cluster_id):
       try:
         cluster.template = request.form['template']
         cluster.vars = request.form['vars']
-        Session()
         Session.add(cluster)
         Session.commit()
         flash('Successfully saved cluster template for {} (ID={}).'

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{%  block page_title %}
+    Internal Server Error
+{% endblock %}
+{% block container %}
+    <h3>You broke Lifeguard!</h3>
+    The page you're attempting to access has encountered an internal server error and cannot be returned.<br />
+    <br />
+    {% if defect != None %}
+        A defect ticket has automatically been created to track this problem, and your Lifeguard administrator has allowed the ticket to be shared:<br />
+        <br />
+        You can view the defect ticket: {{ defect_link | safe }}
+    {% else %}
+        A defect ticket has automatically been created to track this problem, however your Lifeguard administrator has not allowed the ticket to be shared.
+    {% endif %}
+{% endblock %}

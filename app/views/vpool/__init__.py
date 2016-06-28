@@ -11,7 +11,7 @@ from app.views.task.models import Task, TaskThread
 from app.views.template.models import ObjectLoader, VarParser
 from app.views.vpool.models import PoolMembership, VirtualMachinePool, PoolEditForm, GenerateTemplateForm, \
   ExpandException
-from app.views.vpool.tasks import plan_expansion
+from app.views.vpool.tasks import plan_expansion, plan_update
 from app.views.common.models import ActionForm
 from app.views.zone.models import Zone
 from app.views.cluster.models import Cluster
@@ -145,16 +145,14 @@ def expand(pool_id):
     try:
       from app.views.vpool.models import PoolTicket, PoolTicketActions
       if request.form['action'] == 'confirm':
-        title = 'Pool Expansion: {} ({} to {})'.format(
-              current_user.username, pool.name, len(members), pool.cardinality)
+        title = 'Plan Change => Pool Expansion: {} ({} members to {})'.format(pool.name, len(members), pool.cardinality)
         description = "Pool expansion triggered that will instantiate {} new VM(s): \n\n*{}".format(
               len(expansion_names),
               "\n*".join(expansion_names))
         task = Task(
-          name="create expansion change request tickets",
+          name=title,
           description="{}\n{}".format(title, description),
           username=current_user.username)
-        Session()
         Session.add(task)
         Session.commit()
         task_thread = TaskThread(task_id=task.id,
@@ -162,8 +160,7 @@ def expand(pool_id):
                                  pool=pool,
                                  expansion_names=expansion_names)
         task_thread.start()
-        flash(Markup("Started background task: <a href='{}'>TASK-{}".format(
-          url_for('task_bp.view', task_id=task.id), task.id)))
+        flash(Markup("Started background task {}: {}".format(task.name, task.link())))
       return redirect(url_for('vpool_bp.view', pool_id=pool.id))
     except Exception as e:
       raise e
@@ -176,6 +173,44 @@ def expand(pool_id):
                          members=members,
                          pool=pool,
                          expansion_names=expansion_names)
+
+@vpool_bp.route('/vpool/update/<int:pool_id>', methods=['GET', 'POST'])
+@login_required
+def update(pool_id):
+  form = ActionForm()
+  pool = VirtualMachinePool.query.get(pool_id)
+  form_update_ids = None
+  if request.method == 'POST' and request.form['action'] == 'cancel':
+    flash('Update of {} cancelled'.format(pool.name), category='info')
+    return redirect(url_for('vpool_bp.view', pool_id=pool.id))
+  elif request.method == 'POST' and request.form['action'] == 'update':
+      form_update_ids = request.form.getlist('update_ids')
+  members = pool.get_memberships()
+  update_ids = pool.get_update_ids(members, form_update_ids)
+  if request.method == 'POST' and form.validate() and request.form['action'] == 'update':
+    id_to_template = {}
+    for m in members:
+      if m.vm.id in update_ids:
+        id_to_template[m.vm.id] = m.current_template()
+    title = "Plan Change => Update {} member(s) in pool {}".format(len(update_ids), pool.name)
+    description = "The attached templates will replace the VMs identified in their filename (based on VM ID)"
+    task = Task(name=title,
+                description="{}\n{}".format(title, description),
+                username=current_user.username)
+    Session.add(task)
+    Session.commit()
+    task_thread = TaskThread(task_id=task.id,
+                             run_function=plan_update,
+                             pool=pool,
+                             id_to_template=id_to_template)
+    task_thread.start()
+    flash(Markup("Started background task {}: {}".format(title, task.link())))
+    return redirect(url_for('vpool_bp.view', pool_id=pool.id))
+  return render_template('vpool/update.html',
+                         form=form,
+                         pool=pool,
+                         members=members,
+                         update_ids=update_ids)
 
 @vpool_bp.route('/vpool/view/<int:pool_id>', methods=['GET', 'POST'])
 @login_required
@@ -193,22 +228,6 @@ def view(pool_id):
     return redirect(url_for('cluster_bp.view', cluster_id=pool.cluster.id, zone_number=pool.cluster.zone.number))
   return render_template('vpool/view.html',
                          form=form,
-                         pool=pool,
-                         members=members)
-
-@vpool_bp.route('/vpool/update/<int:pool_id>', methods=['GET', 'POST'])
-@login_required
-def update(pool_id):
-  pool = members = None
-  try:
-    pool = VirtualMachinePool.query.get(pool_id)
-    members = pool.get_memberships()
-  except Exception as e:
-    defect_ticket = jira.defect_for_exception("Generating update page failed", e)
-    flash(Markup("There was an error fetching pool_id={}: {}, jira created for defect: {}".format(
-      pool_id, e, JiraApi.ticket_link(issue=defect_ticket))), category='danger')
-    return redirect(url_for('cluster_bp.view', cluster_id=pool.cluster.id, zone_number=pool.cluster.zone.number))
-  return render_template('vpool/update.html',
                          pool=pool,
                          members=members)
 
@@ -230,7 +249,6 @@ def delete(pool_id):
       elif request.form['action'] == 'confirm':
         redirect_url = url_for('cluster_bp.view', zone_number=pool.cluster.zone.number, cluster_id=pool.cluster.id)
         members = pool.get_memberships()
-        Session()
         for member in members:
           Session.delete(member)
         Session.delete(pool)
@@ -271,7 +289,6 @@ def edit(pool_id):
         if not cardinality_pattern.fullmatch(request.form['cardinality']):
           raise Exception("Cardinality {} not numeric".format(request.form['cardinality']))
         pool.cardinality = request.form['cardinality']
-        Session()
         Session.add(pool)
         Session.commit()
         flash('Successfully saved pool template for {} (ID={}).'

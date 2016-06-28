@@ -9,7 +9,7 @@ from app.one import INCLUDING_DONE
 from  jinja2 import Environment
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime
 from sqlalchemy.orm import relationship, backref
-import re
+import re, traceback
 from enum import Enum
 
 
@@ -23,7 +23,7 @@ class VirtualMachinePool(Base):
   name = Column(String(100), unique=True, nullable=False)
   cluster_id = Column(Integer, nullable=False)
   zone_number = Column(Integer, nullable=False)
-  template = Column(Text(), default='{% extends cluster.template %}')
+  template = Column(Text(), default="{%- set cluster = pool.cluster -%}\n{%- extends cluster.template -%}")
   vars = Column(Text(), default='')
   cardinality = Column(Integer, nullable=False, default=1)
   cluster = relationship(
@@ -142,6 +142,21 @@ class VirtualMachinePool(Base):
                           "review and confirm again: {}".format(form_name))
     return expansion_names
 
+  def get_update_ids(self, members, form_update_ids=None):
+    update_ids = []
+    for m in members:
+      if not m.is_current():
+        if form_update_ids is not None:
+          if str(m.vm.id) in form_update_ids:
+            update_ids.append(m.vm.id)
+          else:
+            raise Exception("A VM was determined to require and update "
+                            "however it was not present in earlier form "
+                            "submission (try re-submitting again)")
+        else:
+          update_ids.append(m.vm.id)
+    return update_ids
+
   @staticmethod
   def get_all(cluster):
     return Session().query(VirtualMachinePool).filter_by(cluster=cluster)
@@ -176,14 +191,17 @@ class PoolMembership(Base):
     if self.vm.state_id >= 4:
       return True
 
-  def is_current(self):
+  def current_template(self):
     env = Environment(loader=ObjectLoader())
     vars =  VarParser.parse_kv_strings_to_dict(
       self.pool.cluster.zone.vars,
       self.pool.cluster.vars,
       self.pool.vars,
       'hostname={}'.format(self.vm.name))
-    return self.template == env.from_string(self.pool.template).render(pool=self.pool, vars=vars)
+    return env.from_string(self.pool.template).render(pool=self.pool, vars=vars)
+
+  def is_current(self):
+    return self.template == self.current_template()
 
   @staticmethod
   def get_all(zone):

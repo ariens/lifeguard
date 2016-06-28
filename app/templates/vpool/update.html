@@ -1,0 +1,31 @@
+{% extends "vpool/view.html" %}
+{% block page_title %}
+    {{ super() }}
+{% endblock %}
+
+{% block menu %}
+    {{ super() }}
+{% endblock %}
+
+{% block container %}
+    <h3>Confirm Update:</h3>
+    <form
+            method="POST"
+            action="{{ url_for('vpool_bp.update', pool_id=pool.id) }}"
+            role="form">
+        {{ form.csrf_token }}
+        <p>Are you sure you want to update pool {{ pool.name }}?</p>
+        <p>The highlighted hostnames will be updated to the current version of the template:</p>
+
+        <ul>
+        {% for m in members %}
+            {% if m.vm.id in update_ids %}
+                <input type="hidden" name="update_ids" value="{{ m.vm.id }}" />
+                <li><strong>{{ m.vm.name }}</strong></li>
+            {% endif %}
+        {% endfor %}
+        </ul>
+        <button type="submit" name="action" value="update" class="btn btn-default">Update</button> &nbsp;
+        <button type="submit" name="action" value="cancel" class="btn btn-default">Cancel</button>
+    </form>
+{% endblock %}

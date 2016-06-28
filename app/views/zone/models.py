@@ -3,8 +3,6 @@ from wtforms import StringField, PasswordField, TextAreaField
 from wtforms.validators import InputRequired
 from app.database import Base
 from sqlalchemy import Column, Integer, String, Text
-from sqlalchemy.orm import relationship, backref
-
 
 class Zone(Base):
   __tablename__ = 'zone'

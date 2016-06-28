@@ -1,4 +1,4 @@
-from jinja2 import BaseLoader, TemplateNotFound
+from jinja2 import BaseLoader
 
 class ObjectLoader(BaseLoader):
 
@@ -11,7 +11,7 @@ class VarParser():
   def parse_kv_strings_to_dict(*args):
     """
     Parse 1 or more string/dict objects containing template
-    variables in a final dict object.
+    variables and create a final dict object.
 
     Subsequent parameters will overwrite existing values if
     previously defined.

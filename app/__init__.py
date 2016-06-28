@@ -1,3 +1,4 @@
+import traceback
 from flask import Flask
 from flask_login import LoginManager
 
@@ -14,6 +15,19 @@ login_manager.login_view = 'auth.login'
 
 from app.database import init_db, Session
 database.init_db()
+
+from flask import render_template
+
+@app.errorhandler(500)
+def internal_server_error(e):
+  defect = jira.defect_for_exception(
+    summary_title="Lifeguard: Internal Server Error (500)",
+    tb=traceback.format_exc(),
+    e=e)
+  if app.config['LINK_DEFECT_IN_500']:
+    return render_template('500.html', defect_link=JiraApi.ticket_link(issue=defect)), 404
+  else:
+    return render_template('500.html'), 404
 
 @app.teardown_appcontext
 def shutdown_session(exception=None):

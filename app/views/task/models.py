@@ -6,8 +6,8 @@ import threading
 from datetime import datetime
 from app.jira_api import JiraApi
 import traceback, sys
-from sqlalchemy import Column, Integer, String, DateTime, Text, create_engine, inspect
-from sqlalchemy.orm import scoped_session, sessionmaker
+from sqlalchemy import Column, Integer, String, DateTime, Text
+from flask import url_for
 
 
 class TaskResult(Enum):
@@ -85,6 +85,9 @@ class Task(Base):
       return '{} mins, {} secs'.format(h, s)
     return '{} secs'.format(s)
 
+  def link(self):
+    return '<a href="{}">TASK-{}</a>'.format(url_for('task_bp.view', task_id=self.id), self.id)
+
 class TaskThread(Thread):
   log_date_fmt = "%Y-%m-%dT%H:%M:%S.%f%z"
   def __init__(self, task_id, run_function, log=None, **kwargs):
@@ -137,9 +140,8 @@ class TaskThread(Thread):
       self.task.result = TaskResult.fail.value
       Session.merge(self.task)
       Session.commit()
-      # Previous commit exists in case an exception is raised creating defect ticket
-      #self.task.defect_ticket = jira.defect_for_exception(
-      #  "Background Task Error: {}".format(self.task.name), e, username=self.task.username).key
-      #db_session.merge(self.task)
-      #db_session.commit()
+      self.task.defect_ticket = jira.defect_for_exception(
+        "Background Task Error: {}".format(self.task.name), e, username=self.task.username).key
+      Session.merge(self.task)
+      Session.commit()
     Session.remove()

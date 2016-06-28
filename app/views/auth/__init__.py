@@ -1,7 +1,7 @@
 from ldap3 import LDAPException
 from flask import request, render_template, flash, redirect, url_for, Blueprint, g
 from flask_login import current_user, login_user, logout_user, login_required
-from app import database
+from app.database import Session
 from app import login_manager
 from app.views.auth.models import User, LoginForm
 
@@ -22,7 +22,6 @@ def home():
 
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
-  db_session = database.get_db_session()
   if current_user.is_authenticated:
     flash('You are already logged in.')
     return redirect(url_for('auth.home'))
@@ -40,8 +39,8 @@ def login():
     user = User.query.filter_by(username=username).first()
     if not user:
       user = User(username)
-      db_session.add(user)
-      db_session.commit()
+      Session.add(user)
+      Session.commit()
     login_user(user)
     flash('You have successfully logged in.', 'success')
     return redirect(url_for('auth.home'))

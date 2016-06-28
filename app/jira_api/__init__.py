@@ -62,13 +62,20 @@ class JiraApi():
       assignee={'name': app.config['JIRA_USERNAME']},
       resolution={'id': app.config['JIRA_RESOLVE_STATE_ID']})
 
-  def defect_for_exception(self, summary_title, e, username=None):
+  def defect_for_exception(self, summary_title, e, tb=None, username=None):
     if username is None:
       username = current_user.username
+    if username is None:
+      username = "nobody"
+    description = None
+    if tb is not None:
+      description = "Traceback:\n{}\n\nException: {}".format(tb, e)
+    else:
+      description = "Exception: {}".format(e)
     return self.instance.create_issue(
       project=app.config['JIRA_PROJECT'],
       summary='[auto-{}] Problem: {}'.format(username, summary_title),
-      description="Exception: {}".format(e),
+      description=description,
       customfield_13842=JiraApi.get_datetime_now(),
       customfield_13838= {"value": "No"},
       customfield_13831 =  [

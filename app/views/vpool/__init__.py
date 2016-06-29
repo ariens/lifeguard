@@ -11,7 +11,7 @@ from app.views.task.models import Task, TaskThread
 from app.views.template.models import ObjectLoader, VarParser
 from app.views.vpool.models import PoolMembership, VirtualMachinePool, PoolEditForm, GenerateTemplateForm, \
   ExpandException
-from app.views.vpool.tasks import plan_expansion, plan_update
+from app.views.vpool.tasks import plan_expansion, plan_update, plan_shrink
 from app.views.common.models import ActionForm
 from app.views.zone.models import Zone
 from app.views.cluster.models import Cluster
@@ -75,50 +75,40 @@ def remove_done(pool_id):
 @vpool_bp.route('/vpool/shrink/<int:pool_id>', methods=['GET', 'POST'])
 @login_required
 def shrink(pool_id):
-  pool = shrink_vm_ids = None
+  pool = form_shrink_vm_ids = None
   form = ActionForm()
   try:
     pool = VirtualMachinePool.query.get(pool_id)
+    if request.method == 'POST' and request.form['action'] == 'cancel':
+      flash('Shrink {} cancelled'.format(pool.name), category='info')
+      return redirect(url_for('vpool_bp.view', pool_id=pool.id))
+    elif request.method == 'POST' and request.form['action'] == 'shrink':
+      form_shrink_vm_ids = [int(id) for id in request.form.getlist('shrink_vm_ids')]
     members = pool.get_memberships()
-    if request.method == 'POST' and form.validate():
-      shrink_vm_ids = [int(id) for id in request.form.getlist('shrink_vm_ids')]
-    shrink_members = pool.get_members_to_shrink(members, shrink_vm_ids)
+    shrink_members = pool.get_members_to_shrink(members, form_shrink_vm_ids)
     if shrink_members is None or len(shrink_members) == 0:
       raise Exception("Cannot determine any members to shutdown for shrinking")
   except Exception as e:
     flash("There was an error determining memberships for shrinking: {}".format(e), category='danger')
     return redirect(url_for('vpool_bp.view', pool_id=pool.id))
-  if request.method == 'POST' and form.validate():
-    try:
-      if request.form['action'] == 'cancel':
-        flash('Shrinking {} cancelled'.format(pool.name), category='info')
-        return redirect(url_for('vpool_bp.view', pool_id=pool.id))
-      elif request.form['action'] == 'confirm':
-        Session()
-        vm_ids_to_shutdown = request.form.getlist('shrink_vm_ids')
-        shrink_ticket = jira.instance.create_issue(
-          project=app.config['JIRA_PROJECT'],
-          summary='[auto-{}] Pool Shrink: {} ({} to {})'.format(
-            current_user.username, pool.name, len(members), pool.cardinality),
-          description="Pool shrink triggered that will shutdown {} VM(s): \n\n*{}".format(
-            len(vm_ids_to_shutdown),
-            "\n*".join(['ID {}: {} ({})'.format(m.vm.id, m.vm.name, m.vm.ip_address) for m in shrink_members])),
-          customfield_13842=jira.get_datetime_now(),
-          issuetype={'name': 'Task'})
-        # jira.instance.transition_issue(shrink_ticket, '5', assignee={'name': 'ipgbdautomation'}, resolution={'id': '32'})
-        one_proxy = OneProxy(pool.cluster.zone.xmlrpc_uri, pool.cluster.zone.session_string, verify_certs=False)
-        for m in shrink_members:
-          one_proxy.action_vm(m.remove_cmd(), m.vm.id)
-          Session.delete(m)
-        Session.commit()
-        jira.resolve(shrink_ticket)
-        flash('Shutdown {} VMs to shrink pool {} to cardinality of {}'.format(
-          len(shrink_members), pool.name, pool.cardinality))
-        return redirect(url_for('vpool_bp.view', pool_id=pool.id))
-    except Exception as e:
-      flash("Error shrinking pool {}: {}".format(pool.name, e), category='danger')
-      jira.defect_for_exception("Error shrinking pool {}".format(pool.name), e)
-      return redirect(url_for('vpool_bp.view', pool_id=pool.id))
+  if request.method == 'POST' and form.validate() and request.form['action'] == 'shrink':
+    title = 'Plan Shrink => Pool {} ({} members to {})'.format(pool.name, len(members), pool.cardinality)
+    description = "Pool shrink triggered that will shutdown {} VM(s): \n\n*{}".format(
+          len(shrink_members),
+          "\n*".join([m.vm.name for m in shrink_members]))
+    task = Task(
+      name=title,
+      description="{}\n{}".format(title, description),
+      username=current_user.username)
+    Session.add(task)
+    Session.commit()
+    task_thread = TaskThread(task_id=task.id,
+                             run_function=plan_shrink,
+                             pool=pool,
+                             shrink_members=shrink_members)
+    task_thread.start()
+    flash(Markup("Started background task {}: {}".format(task.name, task.link())))
+    return redirect(url_for('vpool_bp.view', pool_id=pool.id))
   return render_template('vpool/shrink.html',
                          form=form,
                          pool=pool,
@@ -134,40 +124,31 @@ def expand(pool_id):
     if request.method == 'POST' and request.form['action'] == 'cancel':
       flash('Expansion of {} cancelled'.format(pool.name), category='info')
       return redirect(url_for('vpool_bp.view', pool_id=pool.id))
-    elif request.method == 'POST' and request.form['action'] == 'confirm':
+    elif request.method == 'POST' and request.form['action'] == 'expand':
         form_expansion_names = request.form.getlist('expansion_names')
     members = pool.get_memberships()
     expansion_names = pool.get_expansion_names(members, form_expansion_names)
   except Exception as e:
     flash("There was an error determining new names required for expansion: {}".format(e), category='danger')
     return redirect(url_for('vpool_bp.view', pool_id=pool.id))
-  if request.method == 'POST' and form.validate():
-    try:
-      from app.views.vpool.models import PoolTicket, PoolTicketActions
-      if request.form['action'] == 'confirm':
-        title = 'Plan Change => Pool Expansion: {} ({} members to {})'.format(pool.name, len(members), pool.cardinality)
-        description = "Pool expansion triggered that will instantiate {} new VM(s): \n\n*{}".format(
-              len(expansion_names),
-              "\n*".join(expansion_names))
-        task = Task(
-          name=title,
-          description="{}\n{}".format(title, description),
-          username=current_user.username)
-        Session.add(task)
-        Session.commit()
-        task_thread = TaskThread(task_id=task.id,
-                                 run_function=plan_expansion,
-                                 pool=pool,
-                                 expansion_names=expansion_names)
-        task_thread.start()
-        flash(Markup("Started background task {}: {}".format(task.name, task.link())))
-      return redirect(url_for('vpool_bp.view', pool_id=pool.id))
-    except Exception as e:
-      raise e
-      defect_ticket = jira.defect_for_exception("Pool Expansion Ticket Failed", e)
-      flash(Markup('Error expanding pool {} (defect ticket contains exception: {})'.format(
-        pool.name, JiraApi.ticket_link(defect_ticket))), category='danger')
-      return redirect(url_for('vpool_bp.view', pool_id=pool.id))
+  if request.method == 'POST' and form.validate() and request.form['action'] == 'expand':
+    title = 'Plan Change => Pool Expansion: {} ({} members to {})'.format(pool.name, len(members), pool.cardinality)
+    description = "Pool expansion triggered that will instantiate {} new VM(s): \n\n*{}".format(
+          len(expansion_names),
+          "\n*".join(expansion_names))
+    task = Task(
+      name=title,
+      description="{}\n{}".format(title, description),
+      username=current_user.username)
+    Session.add(task)
+    Session.commit()
+    task_thread = TaskThread(task_id=task.id,
+                             run_function=plan_expansion,
+                             pool=pool,
+                             expansion_names=expansion_names)
+    task_thread.start()
+    flash(Markup("Started background task {}: {}".format(task.name, task.link())))
+    return redirect(url_for('vpool_bp.view', pool_id=pool.id))
   return render_template('vpool/expand.html',
                          form=form,
                          members=members,

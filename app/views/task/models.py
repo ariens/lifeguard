@@ -8,7 +8,7 @@ from app.jira_api import JiraApi
 import traceback, sys
 from sqlalchemy import Column, Integer, String, DateTime, Text
 from flask import url_for
-
+import types
 
 class TaskResult(Enum):
   success = 0
@@ -96,7 +96,7 @@ class TaskThread(Thread):
     self.log = log
     self.task = None
     self.task_id = task_id
-    self.run_function = run_function
+    self.run_function = types.MethodType(run_function, self)
     super().__init__(target=self.run_task, kwargs=kwargs)
 
   def log_msg(self, raw_msg):
@@ -125,7 +125,7 @@ class TaskThread(Thread):
     Session.merge(self.task)
     Session.commit()
     try:
-      self.run_function(self, **kwargs)
+      self.run_function(**kwargs)
       self.task.log = self.log
       self.task.end_time = datetime.utcnow()
       self.task.status = TaskStatus.finished.value

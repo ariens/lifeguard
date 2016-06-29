@@ -45,6 +45,8 @@ def plan_expansion(self, pool, expansion_names):
       issuetype={'name': 'MOP Task'},
       assignee={'name': app.config['JIRA_USERNAME']},
       project=app.config['JIRA_CRQ_PROJECT'],
+      description="Instanitate the attached templates in the zone associated "
+                  "to the pool identified in the filename <pool_id>.<hostname>",
       summary='[IMPLEMENTATION TASK] {}'.format(self.task.name),
       parent={'key': crq.key},
       customfield_14135={'value': 'IPG', 'child': {'value': 'IPG Big Data'}},
@@ -63,7 +65,7 @@ def plan_expansion(self, pool, expansion_names):
       attachment_content = io.StringIO(vm_template)
       jira.instance.add_attachment(
         issue=task,
-        filename='{}.template'.format(hostname),
+        filename='{}.{}.template'.format(poo.id, hostname),
         attachment=attachment_content)
       self.log_msg("Attached template for {} to task {}".format(hostname, task.key))
     jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_WRITTEN'])

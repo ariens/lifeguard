@@ -9,8 +9,9 @@ from app.one import INCLUDING_DONE
 from  jinja2 import Environment
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime
 from sqlalchemy.orm import relationship, backref
-import re, traceback
+import re
 from enum import Enum
+from app import ddns
 
 
 class ExpandException(Exception):
@@ -163,6 +164,9 @@ class VirtualMachinePool(Base):
 
   def get_peer_pools(self):
     return Session().query(VirtualMachinePool).filter_by(cluster=self.cluster)
+
+  def get_dns_ips(self):
+    return [rec.to_text() for rec in ddns.get_records(self.name)]
 
 
 class PoolMembership(Base):

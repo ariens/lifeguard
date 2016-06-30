@@ -202,6 +202,7 @@ def view(pool_id):
   try:
     pool = VirtualMachinePool.query.get(pool_id)
     members = pool.get_memberships()
+    flash('DNS records: {}'.format(pool.get_dns_ips()))
   except Exception as e:
     defect_ticket = jira.defect_for_exception("Pool view failed", e)
     flash(Markup("There was an error fetching pool_id={}: {}, jira created for defect: {}".format(

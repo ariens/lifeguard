@@ -9,6 +9,13 @@ from app.jira_api import JiraApi
 jira = JiraApi()
 jira.new_connect()
 
+from app.ddns import DdnsAuditor
+ddns = DdnsAuditor(
+  tsig_fwd_name=app.config['DDNS_TSIG_FWD_NAME'],
+  tsig_fwd_key=app.config['DDNS_TSIG_FWD_KEY'],
+  tsig_rev_name=app.config['DDNS_TSIG_REV_NAME'],
+  tsig_rev_key=app.config['DDNS_TSIG_REV_KEY'])
+
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'auth.login'
@@ -17,7 +24,6 @@ from app.database import init_db, Session
 database.init_db()
 
 from flask import render_template
-
 @app.errorhandler(500)
 def internal_server_error(e):
   defect = jira.defect_for_exception(

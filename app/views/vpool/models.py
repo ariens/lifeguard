@@ -11,7 +11,7 @@ from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime
 from sqlalchemy.orm import relationship, backref
 import re
 from enum import Enum
-from app import ddns
+from app.ddns import DdnsAuditor
 
 
 class ExpandException(Exception):
@@ -166,7 +166,7 @@ class VirtualMachinePool(Base):
     return Session().query(VirtualMachinePool).filter_by(cluster=self.cluster)
 
   def get_dns_ips(self):
-    return [rec.to_text() for rec in ddns.get_records(self.name)]
+    return [rec.to_text() for rec in DdnsAuditor.get_records(self.name)]
 
 
 class PoolMembership(Base):
@@ -221,6 +221,9 @@ class PoolMembership(Base):
       return int(match.group(1))
     else:
       raise Exception("cannot determine number from virtual machine name {}".format(self.vm.name))
+
+  def check_health(self):
+    
 
   def __str__(self):
     return 'PoolMembership: pool_id={}, pool={}, vm_id={}, vm={}, date_added={}'.format(

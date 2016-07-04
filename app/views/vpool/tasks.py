@@ -24,11 +24,11 @@ def plan_expansion(self, pool, expansion_names):
       customfield_19430={'value': 'No conflict with any restrictions'},
       customfield_14135={'value': 'IPG', 'child': {'value': 'IPG Big Data'}},
       customfield_17679="Pool expansion required")
-    self.log_msg("Created change request: {}".format(crq.key))
+    self.log.msg("Created change request: {}".format(crq.key))
     jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_PLANNING'])
-    self.log_msg("Transitioned {} to planning".format(crq.key))
+    self.log.msg("Transitioned {} to planning".format(crq.key))
     jira.instance.create_issue_link('Relate', crq, logging)
-    self.log_msg("Related {} to LOGGING service {}".format(crq.key, logging.key))
+    self.log.msg("Related {} to LOGGING service {}".format(crq.key, logging.key))
     task = jira.instance.create_issue(
       issuetype={'name': 'MOP Task'},
       assignee={'name': app.config['JIRA_USERNAME']},
@@ -39,9 +39,9 @@ def plan_expansion(self, pool, expansion_names):
       parent={'key': crq.key},
       customfield_14135={'value': 'IPG', 'child': {'value': 'IPG Big Data'}},
       customfield_15150={'value': 'No'})
-    self.log_msg("Created task: {}".format(task.key))
+    self.log.msg("Created task: {}".format(task.key))
     jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_PLANNING'])
-    self.log_msg("Transitioned {} to planning".format(task.key))
+    self.log.msg("Transitioned {} to planning".format(task.key))
     env = Environment(loader=ObjectLoader())
     for hostname in expansion_names:
       vars = VarParser.parse_kv_strings_to_dict(
@@ -55,16 +55,16 @@ def plan_expansion(self, pool, expansion_names):
         issue=task,
         filename='{}.{}.template'.format(pool.id, hostname),
         attachment=attachment_content)
-      self.log_msg("Attached template for {} to task {}".format(hostname, task.key))
+      self.log.msg("Attached template for {} to task {}".format(hostname, task.key))
     jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_WRITTEN'])
-    self.log_msg("Transitioned task {} to written".format(task.key))
+    self.log.msg("Transitioned task {} to written".format(task.key))
     jira.approver_instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_APPROVED'])
-    self.log_msg("Approved task {}".format(task.key))
+    self.log.msg("Approved task {}".format(task.key))
     jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_PLANNED_CHANGE'])
-    self.log_msg("Transitioned task {} to approved".format(task.key))
+    self.log.msg("Transitioned task {} to approved".format(task.key))
     jira.approver_instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_APPROVED'])
-    self.log_msg("Transitioned change request {} to approved".format(crq.key))
-    self.log_msg("Task ID {}".format(self.task.id))
+    self.log.msg("Transitioned change request {} to approved".format(crq.key))
+    self.log.msg("Task ID {}".format(self.task.id))
     db_ticket = PoolTicket(
       pool=pool,
       action_id=PoolTicketActions.expand.value,
@@ -76,16 +76,16 @@ def plan_expansion(self, pool, expansion_names):
   except Exception as e:
     if task is not None:
       jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_CANCELLED'])
-      self.log_err("Transitioned task {} to cancelled".format(task.key))
+      self.log.err("Transitioned task {} to cancelled".format(task.key))
       transitions = jira.instance.transitions(task)
-      self.log_err("After cancelling task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
+      self.log.err("After cancelling task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
       jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_CANCELLED'])
-      self.log_err("Transition task {} to cancelled (again)".format(task.key))
+      self.log.err("Transition task {} to cancelled (again)".format(task.key))
       transitions = jira.instance.transitions(task)
-      self.log_err("After second cancellation of task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
+      self.log.err("After second cancellation of task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
     if crq is not None:
       jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_CANCELLED'])
-      self.log_err("Transitioned change request {} to cancelled".format(crq.key))
+      self.log.err("Transitioned change request {} to cancelled".format(crq.key))
     raise e
 
 def plan_update(self, pool, id_to_template):
@@ -107,11 +107,11 @@ def plan_update(self, pool, id_to_template):
       customfield_19430={'value': 'No conflict with any restrictions'},
       customfield_14135={'value': 'IPG', 'child': {'value': 'IPG Big Data'}},
       customfield_17679="Pool update required")
-    self.log_msg("Created change request: {}".format(crq.key))
+    self.log.msg("Created change request: {}".format(crq.key))
     jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_PLANNING'])
-    self.log_msg("Transitioned {} to planning".format(crq.key))
+    self.log.msg("Transitioned {} to planning".format(crq.key))
     jira.instance.create_issue_link('Relate', crq, logging)
-    self.log_msg("Related {} to LOGGING service {}".format(crq.key, logging.key))
+    self.log.msg("Related {} to LOGGING service {}".format(crq.key, logging.key))
     task = jira.instance.create_issue(
       issuetype={'name': 'MOP Task'},
       assignee={'name': app.config['JIRA_USERNAME']},
@@ -120,9 +120,9 @@ def plan_update(self, pool, id_to_template):
       parent={'key': crq.key},
       customfield_14135={'value': 'IPG', 'child': {'value': 'IPG Big Data'}},
       customfield_15150={'value': 'No'})
-    self.log_msg("Created task: {}".format(task.key))
+    self.log.msg("Created task: {}".format(task.key))
     jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_PLANNING'])
-    self.log_msg("Transitioned {} to planning".format(task.key))
+    self.log.msg("Transitioned {} to planning".format(task.key))
     env = Environment(loader=ObjectLoader())
     for vm_id, vm_template in id_to_template.items():
       filename = '{}.{}.template'.format(pool.id, vm_id)
@@ -131,16 +131,16 @@ def plan_update(self, pool, id_to_template):
         issue=task,
         filename=filename,
         attachment=attachment_content)
-      self.log_msg("Attached template for {} to task {}".format(filename, task.key))
+      self.log.msg("Attached template for {} to task {}".format(filename, task.key))
     jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_WRITTEN'])
-    self.log_msg("Transitioned task {} to written".format(task.key))
+    self.log.msg("Transitioned task {} to written".format(task.key))
     jira.approver_instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_APPROVED'])
-    self.log_msg("Approved task {}".format(task.key))
+    self.log.msg("Approved task {}".format(task.key))
     jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_PLANNED_CHANGE'])
-    self.log_msg("Transitioned task {} to approved".format(task.key))
+    self.log.msg("Transitioned task {} to approved".format(task.key))
     jira.approver_instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_APPROVED'])
-    self.log_msg("Transitioned change request {} to approved".format(crq.key))
-    self.log_msg("Task ID {}".format(self.task.id))
+    self.log.msg("Transitioned change request {} to approved".format(crq.key))
+    self.log.msg("Task ID {}".format(self.task.id))
     db_ticket = PoolTicket(
       pool=pool,
       action_id=PoolTicketActions.update.value,
@@ -152,16 +152,16 @@ def plan_update(self, pool, id_to_template):
   except Exception as e:
     if task is not None:
       jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_CANCELLED'])
-      self.log_err("Transitioned task {} to cancelled".format(task.key))
+      self.log.err("Transitioned task {} to cancelled".format(task.key))
       transitions = jira.instance.transitions(task)
-      self.log_err("After cancelling task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
+      self.log.err("After cancelling task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
       jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_CANCELLED'])
-      self.log_err("Transition task {} to cancelled (again)".format(task.key))
+      self.log.err("Transition task {} to cancelled (again)".format(task.key))
       transitions = jira.instance.transitions(task)
-      self.log_err("After second cancellation of task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
+      self.log.err("After second cancellation of task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
     if crq is not None:
       jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_CANCELLED'])
-      self.log_err("Transitioned change request {} to cancelled".format(crq.key))
+      self.log.err("Transitioned change request {} to cancelled".format(crq.key))
     raise e
 
 def plan_shrink(self, pool, shrink_members):
@@ -183,11 +183,11 @@ def plan_shrink(self, pool, shrink_members):
       customfield_19430={'value': 'No conflict with any restrictions'},
       customfield_14135={'value': 'IPG', 'child': {'value': 'IPG Big Data'}},
       customfield_17679="Pool shrink required")
-    self.log_msg("Created change request: {}".format(crq.key))
+    self.log.msg("Created change request: {}".format(crq.key))
     jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_PLANNING'])
-    self.log_msg("Transitioned {} to planning".format(crq.key))
+    self.log.msg("Transitioned {} to planning".format(crq.key))
     jira.instance.create_issue_link('Relate', crq, logging)
-    self.log_msg("Related {} to LOGGING service {}".format(crq.key, logging.key))
+    self.log.msg("Related {} to LOGGING service {}".format(crq.key, logging.key))
     task = jira.instance.create_issue(
       issuetype={'name': 'MOP Task'},
       assignee={'name': app.config['JIRA_USERNAME']},
@@ -196,9 +196,9 @@ def plan_shrink(self, pool, shrink_members):
       parent={'key': crq.key},
       customfield_14135={'value': 'IPG', 'child': {'value': 'IPG Big Data'}},
       customfield_15150={'value': 'No'})
-    self.log_msg("Created task: {}".format(task.key))
+    self.log.msg("Created task: {}".format(task.key))
     jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_PLANNING'])
-    self.log_msg("Transitioned {} to planning".format(task.key))
+    self.log.msg("Transitioned {} to planning".format(task.key))
     for m in [Session.merge(m) for m in shrink_members]:
       filename = '{}.{}.template'.format(pool.id, m.vm_id)
       attachment_content = io.StringIO(m.template)
@@ -206,16 +206,16 @@ def plan_shrink(self, pool, shrink_members):
         issue=task,
         filename=filename,
         attachment=attachment_content)
-      self.log_msg("Attached member {} to shrink to task {}".format(filename, task.key))
+      self.log.msg("Attached member {} to shrink to task {}".format(filename, task.key))
     jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_WRITTEN'])
-    self.log_msg("Transitioned task {} to written".format(task.key))
+    self.log.msg("Transitioned task {} to written".format(task.key))
     jira.approver_instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_APPROVED'])
-    self.log_msg("Approved task {}".format(task.key))
+    self.log.msg("Approved task {}".format(task.key))
     jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_PLANNED_CHANGE'])
-    self.log_msg("Transitioned task {} to approved".format(task.key))
+    self.log.msg("Transitioned task {} to approved".format(task.key))
     jira.approver_instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_APPROVED'])
-    self.log_msg("Transitioned change request {} to approved".format(crq.key))
-    self.log_msg("Task ID {}".format(self.task.id))
+    self.log.msg("Transitioned change request {} to approved".format(crq.key))
+    self.log.msg("Task ID {}".format(self.task.id))
     db_ticket = PoolTicket(
       pool=pool,
       action_id=PoolTicketActions.update.value,
@@ -227,14 +227,14 @@ def plan_shrink(self, pool, shrink_members):
   except Exception as e:
     if task is not None:
       jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_CANCELLED'])
-      self.log_err("Transitioned task {} to cancelled".format(task.key))
+      self.log.err("Transitioned task {} to cancelled".format(task.key))
       transitions = jira.instance.transitions(task)
-      self.log_err("After cancelling task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
+      self.log.err("After cancelling task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
       jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_CANCELLED'])
-      self.log_err("Transition task {} to cancelled (again)".format(task.key))
+      self.log.err("Transition task {} to cancelled (again)".format(task.key))
       transitions = jira.instance.transitions(task)
-      self.log_err("After second cancellation of task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
+      self.log.err("After second cancellation of task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
     if crq is not None:
       jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_CANCELLED'])
-      self.log_err("Transitioned change request {} to cancelled".format(crq.key))
+      self.log.err("Transitioned change request {} to cancelled".format(crq.key))
     raise e

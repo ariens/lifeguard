@@ -74,7 +74,7 @@ class JiraApi():
       description = "Exception: {}".format(e)
     return self.instance.create_issue(
       project=app.config['JIRA_PROJECT'],
-      summary='[auto-{}] Problem: {}'.format(username, summary_title),
+      summary='[auto-{}] Problem: {}, {}'.format(username, summary_title, e),
       description=description,
       customfield_13842=JiraApi.get_datetime_now(),
       customfield_13838= {"value": "No"},

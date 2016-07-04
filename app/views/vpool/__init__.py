@@ -15,7 +15,7 @@ from app.views.vpool.tasks import plan_expansion, plan_update, plan_shrink
 from app.views.common.models import ActionForm
 from app.views.zone.models import Zone
 from app.views.cluster.models import Cluster
-from app.jira_api import JiraApi
+from app.ddns import DdnsAuditor
 
 vpool_bp = Blueprint('vpool_bp', __name__, template_folder='templates')
 
@@ -196,22 +196,41 @@ def update(pool_id):
 @vpool_bp.route('/vpool/view/<int:pool_id>', methods=['GET', 'POST'])
 @login_required
 def view(pool_id):
-  pool = members = None
-  vms_by_id = {}
   form = ActionForm()
-  try:
-    pool = VirtualMachinePool.query.get(pool_id)
-    members = pool.get_memberships()
-    flash('DNS records: {}'.format(pool.get_dns_ips()))
-  except Exception as e:
-    defect_ticket = jira.defect_for_exception("Pool view failed", e)
-    flash(Markup("There was an error fetching pool_id={}: {}, jira created for defect: {}".format(
-      pool_id, e, JiraApi.ticket_link(issue=defect_ticket))), category='danger')
-    return redirect(url_for('cluster_bp.view', cluster_id=pool.cluster.id, zone_number=pool.cluster.zone.number))
+  pool = VirtualMachinePool.query.get(pool_id)
+  members = pool.get_memberships()
   return render_template('vpool/view.html',
                          form=form,
                          pool=pool,
                          members=members)
+
+@vpool_bp.route('/vpool/health/<int:pool_id>', methods=['GET', 'POST'])
+@login_required
+def view(pool_id):
+  form = ActionForm()
+  pool = VirtualMachinePool.query.get(pool_id)
+  members = pool.get_memberships()
+  for m in members:
+
+
+  return render_template('vpool/view.html',
+                         form=form,
+                         pool=pool,
+                         members=members)
+
+@vpool_bp.route('/vpool/audit_dns/<int:pool_id>', methods=['GET', 'POST'])
+@login_required
+def audit_dns(pool_id):
+  form = ActionForm()
+  pool = VirtualMachinePool.query.get(pool_id)
+  members = pool.get_memberships()
+  ddns_auditor = DdnsAuditor(zone=pool.cluster.zone)
+  ddns_audit_log = ddns_auditor.audit_pool_dns(pool=pool, members=members, resolve_errors=False)
+  return render_template('vpool/audit_dns.html',
+                         form=form,
+                         pool=pool,
+                         members=members,
+                         ddns_audit_log=ddns_audit_log)
 
 @vpool_bp.route('/vpool/delete/<int:pool_id>', methods=['GET', 'POST'])
 @login_required

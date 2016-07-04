@@ -89,33 +89,17 @@ class Task(Base):
     return '<a href="{}">TASK-{}</a>'.format(url_for('task_bp.view', task_id=self.id), self.id)
 
 class TaskThread(Thread):
-  log_date_fmt = "%Y-%m-%dT%H:%M:%S.%f%z"
   def __init__(self, task_id, run_function, log=None, **kwargs):
     if None in [task_id, run_function]:
       raise Exception("Required parameter(s) is None: task={}, run_function={}".format(task_id, run_function))
-    self.log = log
+    if log is not None:
+      self.log = log
+    else:
+      self.log = DumbLog()
     self.task = None
     self.task_id = task_id
     self.run_function = types.MethodType(run_function, self)
     super().__init__(target=self.run_task, kwargs=kwargs)
-
-  def log_msg(self, raw_msg):
-    d = datetime.utcnow().strftime(TaskThread.log_date_fmt)
-    msg = "{}: {}".format(d, raw_msg)
-    if self.log is not None:
-      self.log += "\n"
-      self.log += msg
-    else:
-      self.log = msg
-
-  def log_err(self, raw_msg):
-    d = datetime.utcnow().strftime(TaskThread.log_date_fmt)
-    msg = "{} ERROR: {}".format(d, raw_msg)
-    if self.log is not None:
-      self.log += "\n"
-      self.log += msg
-    else:
-      self.log = msg
 
   def run_task(self, **kwargs):
     self.task = Task.query.get(self.task_id)
@@ -126,14 +110,14 @@ class TaskThread(Thread):
     Session.commit()
     try:
       self.run_function(**kwargs)
-      self.task.log = self.log
+      self.task.log = self.log.messages
       self.task.end_time = datetime.utcnow()
       self.task.status = TaskStatus.finished.value
       self.task.result = TaskResult.success.value
       Session.merge(self.task)
       Session.commit()
     except Exception as e:
-      self.task.log = self.log
+      self.task.log = self.log.messages
       self.task.tb = traceback.format_exc()
       self.task.end_time = datetime.utcnow()
       self.task.status = TaskStatus.finished.value
@@ -145,3 +129,42 @@ class TaskThread(Thread):
       Session.merge(self.task)
       Session.commit()
     Session.remove()
+
+class DumbLog:
+  """
+  A dumb logging implementation that supports logging regular messages and errors.
+
+  I didn't look to hard at Python's Logger to determine if there was a way to extract all logged messages
+  and obtian them as strings.  I imagine that it would have been possible via a custom adapter or other
+  Logger compatible construct, however I opted to just get something basic work that captured my requirements.
+  Perhaps this can be pulled out and done properly once time allows.
+
+  Performance of this should be expected to be poor but sufficient for small numbers of messages.
+  """
+
+  def __init__(self, messages=None, date_fmt="%Y-%m-%dT%H:%M:%S.%f%z"):
+    self.date_fmt = date_fmt
+    self.messages = messages
+    self.contains_errors = False
+
+  def msg(self, raw_msg):
+    """log  a regular message"""
+    d = datetime.utcnow().strftime(self.date_fmt)
+    msg = "{}: {}".format(d, raw_msg)
+    if self.messages is not None:
+      self.messages += "\n"
+      self.messages += msg
+    else:
+      self.messages = msg
+
+  def err(self, raw_msg):
+    """log an error"""
+    self.contains_errors = True
+    d = datetime.utcnow().strftime(self.date_fmt)
+    msg = "{} ERROR: {}".format(d, raw_msg)
+    if self.messages is not None:
+      self.messages += "\n"
+      self.messages += msg
+    else:
+      self.messages = msg
+

@@ -99,7 +99,7 @@ class TaskThread(Thread):
     self.task = None
     self.task_id = task_id
     self.run_function = types.MethodType(run_function, self)
-    super().__init__(target=self.run_task, kwargs=kwargs)
+    super().__init__(target=self.run_task, daemon=True, kwargs=kwargs)
 
   def run_task(self, **kwargs):
     self.task = Task.query.get(self.task_id)

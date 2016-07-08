@@ -8,6 +8,14 @@
 {% endblock %}
 
 {% block menu %}
+    <h3>Pending Tickets:</h3>
+    <ul>
+        {% for t in pool.get_tickets(done=False) %}
+            <li>{{ t.get_link() | safe }} ({{ t.action_name() }})</li>
+        {% else %}
+            <i>No tickets</i>
+        {% endfor %}
+    </ul>
     <h3>Pool Actions:</h3>
     <ul>
         {% set cleanuprequried = pool.num_done_vms(members) %}
@@ -28,7 +36,15 @@
             <li><a href="{{ url_for('vpool_bp.update', pool_id=pool.id) }}">Update</a> <span class="red">({{ numoutdated }} Outdated VMs )</span></li>
         {% endif %}
     </ul>
-    <h3>Cluster Pools:</h3>
+    <h3>Closed Tickets:</h3>
+    <ul>
+        {% for t in pool.get_tickets(done=True) %}
+            <li>{{ t.get_link() | safe }} ({{ t.action_name() }})</li>
+        {% else %}
+            <i>No tickets</i>
+        {% endfor %}
+    </ul>
+    <h3>Other Pools in Cluster:</h3>
     <ul>
         {% for peer_pool in pool.get_peer_pools() %}
             <li><a href="{{ url_for('vpool_bp.view', pool_id=peer_pool.id) }}">{{ peer_pool.name }}</a></li>

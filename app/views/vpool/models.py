@@ -7,11 +7,12 @@ from app.database import Base, Session
 from app.one import OneProxy
 from app.one import INCLUDING_DONE
 from  jinja2 import Environment
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime
+from sqlalchemy import Column, Boolean, Integer, String, Text, ForeignKey, DateTime
 from sqlalchemy.orm import relationship, backref
 import re
 from enum import Enum
 from app.ddns import DdnsAuditor
+from app.jira_api import JiraApi
 
 
 class ExpandException(Exception):
@@ -54,7 +55,7 @@ class VirtualMachinePool(Base):
   def __repr__(self):
     self.__str__()
 
-  def get_memberships(self, fetch_vms=True):
+  def get_memberships(self, fetch_vms=True, vm_cache=None):
     """
     Get the PoolMembership objects that are associated with the pool
     :param fetch_vms: If true, the vm attribute will be populated (incurs potentially
@@ -64,9 +65,10 @@ class VirtualMachinePool(Base):
     memberships =  PoolMembership.query.filter_by(pool=self).all()
     if fetch_vms:
       one_proxy = OneProxy(self.cluster.zone.xmlrpc_uri, self.cluster.zone.session_string, verify_certs=False)
-      vms_dict = {vm.id: vm for vm in one_proxy.get_vms(INCLUDING_DONE)}
+      if vm_cache is None:
+        vm_cache = {vm.id: vm for vm in one_proxy.get_vms(INCLUDING_DONE)}
       for m in memberships:
-        m.vm = vms_dict[m.vm_id]
+        m.vm = vm_cache[m.vm_id]
     return memberships
 
   def name_for_number(self, number):
@@ -97,8 +99,11 @@ class VirtualMachinePool(Base):
         num += 1
     return num
 
-  def get_tickets(self):
-    return PoolTicket.query.filter_by(pool=self).all()
+  def get_tickets(self, done=None):
+    if done is not None:
+      return PoolTicket.query.filter_by(pool=self, done=done).all()
+    else:
+      return PoolTicket.query.filter_by(pool=self).all()
 
   def get_cluster(self):
     return Cluster.query.filter_by(zone_number=self.zone_number, id=self.cluster_id).first()
@@ -118,7 +123,7 @@ class VirtualMachinePool(Base):
       shrink.append(candidate)
     return shrink
 
-  def get_expansion_names(self, members, form_expansion_names):
+  def get_expansion_names(self, members, form_expansion_names=None):
     """
     Checks if there are hosts that are required for expansion and if so generates their new
     names by creating lowest missing values of 'N' in poolname<N>.sub.domain.tld.
@@ -157,6 +162,9 @@ class VirtualMachinePool(Base):
         else:
           update_ids.append(m.vm.id)
     return update_ids
+
+  def pending_ticket(self, action):
+    return PoolTicket.query.filter_by(pool=self, action_id=action.value, done=False).first()
 
   @staticmethod
   def get_all(cluster):
@@ -222,9 +230,6 @@ class PoolMembership(Base):
     else:
       raise Exception("cannot determine number from virtual machine name {}".format(self.vm.name))
 
-  def check_health(self):
-    
-
   def __str__(self):
     return 'PoolMembership: pool_id={}, pool={}, vm_id={}, vm={}, date_added={}'.format(
       self.pool_id,
@@ -237,6 +242,36 @@ class PoolMembership(Base):
     self.__str__()
 
 
+class PoolMemberDiagnostic(Base):
+  __tablename__ = 'pool_member_diagnostics'
+  id = Column(Integer, primary_key=True)
+  vm_id = Column(Integer())
+  pool_id = Column(Integer(), ForeignKey('virtual_machine_pool.id'))
+  pool = relationship('VirtualMachinePool', backref=backref('diagnostics', lazy='dynamic'))
+  start_date = Column(DateTime, nullable=False)
+  end_date = Column(DateTime, nullable=False)
+  stdout = Column(Text())
+  stderr = Column(Text())
+  exitcode = Column(Integer(), nullable=False)
+
+  def __init__(self,
+               vm_id=None,
+               pool_id=None,
+               pool=None,
+               start_date=None,
+               end_date=None,
+               stdout=None,
+               stderr=None,
+               exitcode=None):
+    self.vm_id = vm_id
+    self.pool_id = pool_id
+    self.pool = pool
+    self.start_date = start_date
+    self.end_date = end_date
+    self.stderr = stderr
+    self.stdout = stdout
+    self.exitcode = exitcode
+
 class PoolTicketActions(Enum):
   expand = 0
   shrink = 1
@@ -245,23 +280,35 @@ class PoolTicketActions(Enum):
 
 class PoolTicket(Base):
   __tablename__ = 'pool_ticket'
-  pool = relationship('VirtualMachinePool', backref=backref('pool_tickets'), cascade='all')
+  pool = relationship('VirtualMachinePool', backref=backref('change_tickets'), cascade='all')
   pool_id = Column(Integer, ForeignKey('virtual_machine_pool.id'), primary_key=True)
   ticket_key = Column(String(17), primary_key=True)
   task = relationship('Task', backref=backref('pool_tickets'), cascade='all')
   task_id = Column(Integer, ForeignKey('task.id'))
   action_id = Column(Integer, nullable=False)
+  done = Column(Boolean, nullable=False, default=False)
 
-  def __init__(self, pool=None, pool_id=None, ticket_key=None, task=None, task_id=None, action_id=None):
+  def __init__(self,
+               pool=None,
+               pool_id=None,
+               ticket_key=None,
+               task=None,
+               task_id=None,
+               action_id=None,
+               done=False):
     self.pool_id = pool_id
     self.pool = pool
     self.ticket_key = ticket_key
     self.task = task
     self.task_id = task_id
     self.action_id = action_id
+    self.done = done
 
   def action_name(self):
     return PoolTicketActions(self.action_id).name
+
+  def get_link(self):
+    return JiraApi.ticket_link(key=self.ticket_key)
 
 class PoolEditForm(Form):
   name = StringField('Name', [InputRequired()])

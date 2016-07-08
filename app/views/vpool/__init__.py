@@ -11,7 +11,8 @@ from app.views.task.models import Task, TaskThread
 from app.views.template.models import ObjectLoader, VarParser
 from app.views.vpool.models import PoolMembership, VirtualMachinePool, PoolEditForm, GenerateTemplateForm, \
   ExpandException
-from app.views.vpool.tasks import plan_expansion, plan_update, plan_shrink
+from app.views.vpool.elasticity_tasks import plan_expansion, plan_update, plan_shrink
+from app.views.vpool.health import Diagnostic
 from app.views.common.models import ActionForm
 from app.views.zone.models import Zone
 from app.views.cluster.models import Cluster
@@ -206,17 +207,24 @@ def view(pool_id):
 
 @vpool_bp.route('/vpool/health/<int:pool_id>', methods=['GET', 'POST'])
 @login_required
-def view(pool_id):
+def health(pool_id):
   form = ActionForm()
   pool = VirtualMachinePool.query.get(pool_id)
   members = pool.get_memberships()
+  diagnostics = []
   for m in members:
-
-
-  return render_template('vpool/view.html',
+    diag = Diagnostic(user=app.config['SSH_HEALTH_CHECK_USER'],
+                      host=m.vm.name,
+                      ssh_identity_file=app.config['SSH_IDENTITY_FILE'],
+                      cmd=app.config['SSH_HEALTH_CHECK_CMD'],
+                      timeout=app.config['SSH_HEALTH_CHECK_TIMEOUT'])
+    diag.run()
+    diagnostics.append(diag)
+  return render_template('vpool/health.html',
                          form=form,
                          pool=pool,
-                         members=members)
+                         members=members,
+                         diagnostics=diagnostics)
 
 @vpool_bp.route('/vpool/audit_dns/<int:pool_id>', methods=['GET', 'POST'])
 @login_required

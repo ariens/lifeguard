@@ -2,18 +2,44 @@ from jira import JIRA
 from app import app
 from flask_login import current_user
 import pytz
+import logging
 from datetime import datetime, timedelta
 
 
 class JiraApi():
 
-  str_jira_scheduled = "%Y-%m-%dT%H:%M:%S.0%z"
+  str_jira_scheduled = "%Y-%m-%dT%H:%M:%S.000%z"
 
   def __init__(self,
                instance=None,
                approver_instance=None):
     self.instance = instance
     self.approver_instance = approver_instance
+
+  @staticmethod
+  def done_issue(issue):
+    if str(issue.fields.status) == "Closed" or str(issue.fields.resolution) == "Cancelled":
+      return True
+    return False
+
+  @staticmethod
+  def expired(issue):
+    tz = pytz.timezone(app.config['CM_TZ'])
+    utc = pytz.utc
+    now_utc = utc.localize(datetime.utcnow())
+    now_tz = now_utc.astimezone(tz)
+    window_end = datetime.strptime(issue.fields.customfield_14530, JiraApi.str_jira_scheduled)
+    return  window_end < now_tz
+
+  @staticmethod
+  def in_window(issue):
+    tz = pytz.timezone(app.config['CM_TZ'])
+    utc = pytz.utc
+    now_utc = utc.localize(datetime.utcnow())
+    now_tz = now_utc.astimezone(tz)
+    window_start = datetime.strptime(issue.fields.customfield_14530, JiraApi.str_jira_scheduled)
+    window_end = datetime.strptime(issue.fields.customfield_14530, JiraApi.str_jira_scheduled)
+    return  window_start <= now_tz <= window_end
 
   @staticmethod
   def next_immediate_window_dates():

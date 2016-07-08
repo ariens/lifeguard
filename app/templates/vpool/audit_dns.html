@@ -1,0 +1,23 @@
+{% extends "vpool/view.html" %}
+{% block page_title %}
+    {{ super() }}
+{% endblock %}
+
+{% block menu %}
+    {{ super() }}
+{% endblock %}
+
+{% block container %}
+    <h3>DNS Audit:</h3>
+    <pre>{{ ddns_audit_log.messages }}</pre>
+    {#
+    <form
+            method="POST"
+            action="{{ url_for('vpool_bp.audit_dns', pool_id=pool.id) }}"
+            role="form">
+        {{ form.csrf_token }}
+        <button type="submit" name="action" value="update" class="btn btn-default">Update</button> &nbsp;
+        <button type="submit" name="action" value="cancel" class="btn btn-default">Cancel</button>
+    </form>
+     #}
+{% endblock %}

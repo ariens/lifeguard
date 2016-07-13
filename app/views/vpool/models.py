@@ -213,7 +213,10 @@ class PoolMembership(Base):
     return env.from_string(self.pool.template).render(pool=self.pool, vars=vars)
 
   def is_current(self):
-    return self.template == self.current_template()
+    try:
+      return self.template == self.current_template()
+    except Exception as e:
+      raise e
 
   @staticmethod
   def get_all(zone):

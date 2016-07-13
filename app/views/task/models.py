@@ -76,6 +76,8 @@ class Task(Base):
   def get_elapsed(self):
     if self.status is None or self.status == TaskStatus.pending.value:
       return None
+    if self.start_time is None:
+      return None
     end = self.end_time if self.end_time is not None else datetime.utcnow()
     m, s = divmod((end - self.start_time).total_seconds(), 60)
     h, m = divmod(m, 60)
@@ -89,32 +91,34 @@ class Task(Base):
     return '<a href="{}">TASK-{}</a>'.format(url_for('task_bp.view', task_id=self.id), self.id)
 
 class TaskThread(Thread):
-  def __init__(self, task_id, run_function, log=None, **kwargs):
-    if None in [task_id, run_function]:
+  def __init__(self, task, run_function, log=None, **kwargs):
+    if None in [task, run_function]:
       raise Exception("Required parameter(s) is None: task={}, run_function={}".format(task_id, run_function))
     if log is not None:
       self.log = log
     else:
       self.log = DumbLog()
     self.task = None
-    self.task_id = task_id
+    self.task = Session.merge(task)
     self.run_function = types.MethodType(run_function, self)
     super().__init__(target=self.run_task, daemon=True, kwargs=kwargs)
 
   def run_task(self, **kwargs):
-    self.task = Task.query.get(self.task_id)
+    Session.merge(self.task)
     self.task.start_time = datetime.utcnow()
     self.task.ident = threading.get_ident()
     self.task.status = TaskStatus.running.value
     Session.merge(self.task)
     Session.commit()
+    Session.remove()
     try:
       self.run_function(**kwargs)
+
       self.task.log = self.log.messages
       self.task.end_time = datetime.utcnow()
       self.task.status = TaskStatus.finished.value
       self.task.result = TaskResult.success.value
-      Session.merge(self.task)
+      self.task = Session.merge(self.task)
       Session.commit()
     except Exception as e:
       self.task.log = self.log.messages
@@ -122,11 +126,15 @@ class TaskThread(Thread):
       self.task.end_time = datetime.utcnow()
       self.task.status = TaskStatus.finished.value
       self.task.result = TaskResult.fail.value
-      Session.merge(self.task)
+      self.task = Session.merge(self.task)
       Session.commit()
-      self.task.defect_ticket = jira.defect_for_exception(
-        "Background Task Error: {}".format(self.task.name), e, username=self.task.username).key
-      Session.merge(self.task)
+      defect = jira.defect_for_exception(
+        "Background Task Error: {}".format(
+          self.task.name),
+        e, tb=traceback.format_exc(),
+        username=self.task.username)
+      self.task.defect_ticket = defect.key
+      self.task = Session.merge(self.task)
       Session.commit()
     Session.remove()
 

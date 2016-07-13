@@ -3,24 +3,143 @@ from app import app
 from flask_login import current_user
 import pytz
 import logging
+import traceback
 from datetime import datetime, timedelta
 
+class TransitionException(Exception):
+  pass
 
 class JiraApi():
-
   str_jira_scheduled = "%Y-%m-%dT%H:%M:%S.000%z"
-
   def __init__(self,
                instance=None,
                approver_instance=None):
     self.instance = instance
     self.approver_instance = approver_instance
 
+  def transition_issue(self, issue, state_name, **kwargs):
+    state_id = app.config[state_name]
+    try:
+      self.instance.transition_issue(issue, state_id, **kwargs)
+      logging.info("transitioned {} to {} ({})".format(issue.key, state_name, state_id))
+    except Exception as e:
+      logging.error("Error: {}".format(e))
+      description = "Cannot transition {} in status {} to {} ({}). " \
+                    "Available states are: {}".format(
+        issue.key,
+        issue.fields.status,
+        state_name,
+        state_id,
+        {t['id'] : t['name'] for t in self.instance.transitions(issue)})
+      defect = self.defect_for_exception(
+        summary_title="issue transition exception",
+        e=e,
+        description=description,
+        username="transition_issue()")
+      logging.error("{} raised defect issue: {}".format(description, defect.key))
+      raise e
+
+  def cancel_crq_and_tasks(self, crq, comment):
+    exceptions = []
+    for t in crq.fields.subtasks:
+      if str(t.fields.status).lower() in ['closed', 'cancelled']:
+        logging.info("sub-task {} already in finished state ({})".format(t.key, t.fields.status))
+        continue
+      try:
+        self.transition_issue(t,
+          'JIRA_TRANSITION_TASK_CANCELLED',
+          comment=comment,
+          resolution={'id': app.config['JIRA_RESOLUTION_CANCELLED']})
+      except Exception as e:
+        logging.error("Error: {}".format(e))
+        exceptions.append(e)
+    if str(crq.fields.status).lower() != 'close':
+      utc = pytz.utc
+      tz = pytz.timezone(app.config['CM_TZ'])
+      now_utc = utc.localize(datetime.utcnow())
+      now_tz = now_utc.astimezone(tz)
+      now_jira = now_tz.strftime(JiraApi.str_jira_scheduled)
+      try:
+        if str(crq.fields.status).lower() == 'implementation':
+          self.transition_issue(
+            crq,
+            'JIRA_TRANSITION_CRQ_CLOSE',
+            comment=comment,
+            resolution={'id': app.config['JIRA_RESOLUTION_CANCELLED']},
+            customfield_15235={"id": app.config['JIRA_RESOLUTION_DETAILS_UNSUCCESSFUL']},
+            customfield_16430=now_jira,
+            customfield_16431=now_jira)
+        elif str(crq.fields.status).lower() == 'scheduled':
+          self.transition_issue(
+            crq,
+            'JIRA_TRANSITION_CRQ_SCHEDULED_TO_CANCELLED',
+            comment=comment)
+      except Exception as e:
+        logging.error("Error: {}".format(e))
+        exceptions.append(e)
+    if len(exceptions):
+      raise Exception("Caught {} exceptions trying to "
+                      "cancel {} and it's sub-tasks".format(len(exceptions), crq))
+
+  def start_crq(self, crq, comment):
+    self.transition_issue(crq, 'JIRA_TRANSITION_CRQ_IMPLEMENTATION', comment=comment)
+
+  def cancel_and_fail_crq(self, crq):
+    utc = pytz.utc
+    tz = pytz.timezone(app.config['CM_TZ'])
+    now_utc = utc.localize(datetime.utcnow())
+    now_tz = now_utc.astimezone(tz)
+    now_jira = now_tz.strftime(JiraApi.str_jira_scheduled)
+    self.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_CLOSE'],
+                                   resolution={'id': app.config['JIRA_RESOLUTION_CANCELLED']},
+                                   customfield_15235={"id": app.config['JIRA_RESOLUTION_DETAILS_UNSUCCESSFUL']},
+                                   customfield_16430=now_jira,
+                                   customfield_16431=now_jira,
+                                   comment="change cancelled upon failure")
+
+
+  def start_task(self, task, comment):
+    self.transition_issue(task,
+                          'JIRA_TRANSITION_TASK_IMPLEMENTATION',
+                          comment=comment)
+
+  def complete_task(self, task, comment):
+    self.transition_issue(task,
+                          'JIRA_TRANSITION_TASK_CLOSED',
+                          resolution={'id': app.config['JIRA_RESOLUTION_COMPLETED']},
+                          comment=comment)
+
+  def fail_task(self, task):
+    self.transition_issue(task,
+                          'JIRA_TRANSITION_TASK_CLOSED',
+                          resolution={'id': app.config['JIRA_RESOLUTION_CANCELLED']},
+                          customfield_15235={"id": "18798"})
+
+
+
+
   @staticmethod
-  def done_issue(issue):
-    if str(issue.fields.status) == "Closed" or str(issue.fields.resolution) == "Cancelled":
+  def is_ready(issue):
+    if str(issue.fields.status).lower() != "scheduled":
+      return False
+    for t in issue.fields.subtasks:
+      if str(t.fields.status).lower() != 'approved':
+        return False
+    return True
+
+  @staticmethod
+  def crq_and_tasks_ready(crq):
+    if str(crq.fields.status) == app.config['JIRA_CRQ_READY_STATUS']:
+      for t in crq.fields.subtasks:
+        if str(t.fields.status) != app.config['JIRA_TASK_READY_STATUS']:
+          logging.info("{} sub task {} status {} needs to be {}".format(
+            crq.key, t.key, str(t.fields.status), app.config['JIRA_TASK_READY_STATUS']))
+          return False
       return True
+    logging.info("{} status {} needs to be {}".format(
+      crq.key, str(crq.fields.status), app.config['JIRA_CRQ_READY_STATUS']))
     return False
+
 
   @staticmethod
   def expired(issue):
@@ -28,7 +147,7 @@ class JiraApi():
     utc = pytz.utc
     now_utc = utc.localize(datetime.utcnow())
     now_tz = now_utc.astimezone(tz)
-    window_end = datetime.strptime(issue.fields.customfield_14530, JiraApi.str_jira_scheduled)
+    window_end = datetime.strptime(issue.fields.customfield_14531, JiraApi.str_jira_scheduled)
     return  window_end < now_tz
 
   @staticmethod
@@ -38,7 +157,7 @@ class JiraApi():
     now_utc = utc.localize(datetime.utcnow())
     now_tz = now_utc.astimezone(tz)
     window_start = datetime.strptime(issue.fields.customfield_14530, JiraApi.str_jira_scheduled)
-    window_end = datetime.strptime(issue.fields.customfield_14530, JiraApi.str_jira_scheduled)
+    window_end = datetime.strptime(issue.fields.customfield_14531, JiraApi.str_jira_scheduled)
     return  window_start <= now_tz <= window_end
 
   @staticmethod
@@ -88,19 +207,21 @@ class JiraApi():
       assignee={'name': app.config['JIRA_USERNAME']},
       resolution={'id': app.config['JIRA_RESOLVE_STATE_ID']})
 
-  def defect_for_exception(self, summary_title, e, tb=None, username=None):
+  def defect_for_exception(self, summary_title, e, tb=None, username=None, description=None):
     if username is None:
       username = current_user.username
     if username is None:
       username = "nobody"
-    description = None
-    if tb is not None:
-      description = "Traceback:\n{}\n\nException: {}".format(tb, e)
-    else:
-      description = "Exception: {}".format(e)
+    if tb is None:
+      tb = traceback.format_exc()
+    problem = "An {} exception occured".format(e)
+    description = problem if description is None else "{}\n{}".format(problem, description)
+    description = "{}\nTraceback:\n{}".format(description, tb)
+    summary_title = '[auto-{}] Problem: {}'.format(username, summary_title)
+    summary_title = (summary_title[:252] + '...') if len(summary_title) > 75 else summary_title
     return self.instance.create_issue(
       project=app.config['JIRA_PROJECT'],
-      summary='[auto-{}] Problem: {}, {}'.format(username, summary_title, e),
+      summary=summary_title,
       description=description,
       customfield_13842=JiraApi.get_datetime_now(),
       customfield_13838= {"value": "No"},

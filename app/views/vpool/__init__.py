@@ -11,7 +11,7 @@ from app.views.task.models import Task, TaskThread
 from app.views.template.models import ObjectLoader, VarParser
 from app.views.vpool.models import PoolMembership, VirtualMachinePool, PoolEditForm, GenerateTemplateForm, \
   ExpandException
-from app.views.vpool.elasticity_tasks import plan_expansion, plan_update, plan_shrink
+from app.views.vpool.elasticity_planning import plan_expansion, plan_update, plan_shrink
 from app.views.vpool.health import Diagnostic
 from app.views.common.models import ActionForm
 from app.views.zone.models import Zone

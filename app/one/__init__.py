@@ -3,6 +3,7 @@ import xml.etree.ElementTree as etree
 import ssl
 from app.one.VirtualMachine import VirtualMachine
 from app.one.Cluster import Cluster
+import time
 
 # http://docs.opennebula.org/4.10/integration/system_interfaces/api.html
 
@@ -219,6 +220,51 @@ class OneProxy:
         template)))
     else:
       return response[1]
+
+  class DefiedDeathException(Exception):
+    pass
+
+  def kill_vm(self, vm_id):
+    """
+
+    :param vm: VirtualMachine
+    :return:
+    """
+    pre_active_kill_cmds = ['delete', 'delete', 'cancel']
+    post_active_kill_cmds = ['cancel', 'shutdown-hard', 'shutdown']
+    attempted_cmds = []
+    while True:
+      # refresh our VM
+      vm = self.get_vm(id=vm_id)
+      if vm.state_id >= 6:
+        break
+      if vm.state_id < 3:
+        # The VM is not yet active..
+        if len(pre_active_kill_cmds) == 0:
+          raise Exception("No more attempts at killing VM in state {} left, tried: {}".format(
+            vm.state, ", ".join(attempted_cmds)))
+        else:
+          try:
+            cmd = pre_active_kill_cmds.pop()
+            attempted_cmds.append(cmd)
+            self.action_vm(action=cmd, vm_id=vm.id)
+            break
+          except Exception as e:
+            pass
+      else:
+        # The VM is active..
+        if len(post_active_kill_cmds) == 0:
+          raise Exception("No more attempts at killing VM in state {} left, tried: {}".format(
+            vm.state, ", ".join(attempted_cmds)))
+        else:
+          try:
+            cmd = pre_active_kill_cmds.pop()
+            attempted_cmds.append(cmd)
+            self.action_vm(action=cmd, vm_id=vm.id)
+            break
+          except Exception as e:
+            pass
+      time.sleep(1)
 
   def action_vm(self, action, vm_id):
     """

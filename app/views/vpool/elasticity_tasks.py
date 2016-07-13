@@ -1,240 +1,70 @@
-import io
 from app.database import Session
+from app.one import OneProxy
 from app import app, jira
-from jinja2 import Environment
-from app.views.template.models import VarParser, ObjectLoader
-from app.views.vpool.models import PoolTicket, PoolTicketActions
+from app.views.vpool.models import PoolMembership
+import traceback
+from datetime import datetime
 
-def plan_expansion(self, pool, expansion_names):
-  task = crq = None
+def expand(self, pool, pool_ticket, issue):
+  new_vm_ids = []
+  pool = Session.merge(pool)
+  pool_ticket = Session.merge(pool_ticket)
+  self.task = Session.merge(self.task)
   try:
-    pool = Session.merge(pool)
-    start, end = jira.next_immediate_window_dates()
-    logging = jira.instance.issue('SVC-1020')
-    crq = jira.instance.create_issue(
-      project=app.config['JIRA_CRQ_PROJECT'],
-      issuetype={'name': 'Change Request'},
-      assignee={'name': app.config['JIRA_USERNAME']},
-      summary='[IMPLEMENT] {}'.format(self.task.name),
-      description=self.task.description,
-      customfield_14530=start,
-      customfield_14531=end,
-      customfield_19031={'value': 'Maintenance'},
-      customfield_15152=[{'value': 'Global'}],
-      customfield_19430={'value': 'No conflict with any restrictions'},
-      customfield_14135={'value': 'IPG', 'child': {'value': 'IPG Big Data'}},
-      customfield_17679="Pool expansion required")
-    self.log.msg("Created change request: {}".format(crq.key))
-    jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_PLANNING'])
-    self.log.msg("Transitioned {} to planning".format(crq.key))
-    jira.instance.create_issue_link('Relate', crq, logging)
-    self.log.msg("Related {} to LOGGING service {}".format(crq.key, logging.key))
-    task = jira.instance.create_issue(
-      issuetype={'name': 'MOP Task'},
-      assignee={'name': app.config['JIRA_USERNAME']},
-      project=app.config['JIRA_CRQ_PROJECT'],
-      description="Instanitate the attached templates in the zone associated "
-                  "to the pool identified in the filename <pool_id>.<hostname>",
-      summary='[IMPLEMENTATION TASK] {}'.format(self.task.name),
-      parent={'key': crq.key},
-      customfield_14135={'value': 'IPG', 'child': {'value': 'IPG Big Data'}},
-      customfield_15150={'value': 'No'})
-    self.log.msg("Created task: {}".format(task.key))
-    jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_PLANNING'])
-    self.log.msg("Transitioned {} to planning".format(task.key))
-    env = Environment(loader=ObjectLoader())
-    for hostname in expansion_names:
-      vars = VarParser.parse_kv_strings_to_dict(
-        pool.cluster.zone.vars,
-        pool.cluster.vars,
-        pool.vars,
-        'hostname={}'.format(hostname))
-      vm_template = env.from_string(pool.template).render(pool=pool, vars=vars)
-      attachment_content = io.StringIO(vm_template)
-      jira.instance.add_attachment(
-        issue=task,
-        filename='{}.{}.template'.format(pool.id, hostname),
-        attachment=attachment_content)
-      self.log.msg("Attached template for {} to task {}".format(hostname, task.key))
-    jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_WRITTEN'])
-    self.log.msg("Transitioned task {} to written".format(task.key))
-    jira.approver_instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_APPROVED'])
-    self.log.msg("Approved task {}".format(task.key))
-    jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_PLANNED_CHANGE'])
-    self.log.msg("Transitioned task {} to approved".format(task.key))
-    jira.approver_instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_APPROVED'])
-    self.log.msg("Transitioned change request {} to approved".format(crq.key))
-    self.log.msg("Task ID {}".format(self.task.id))
-    db_ticket = PoolTicket(
-      pool=pool,
-      action_id=PoolTicketActions.expand.value,
-      ticket_key=crq.key,
-      task=self.task)
-    Session.add(db_ticket)
-    Session.commit()
-    Session.remove()
+    jira.start_crq(issue, comment="starting change")
+    self.log.msg("starting change {}, ticket moved to implementation".format(issue.key))
   except Exception as e:
-    if task is not None:
-      jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_CANCELLED'])
-      self.log.err("Transitioned task {} to cancelled".format(task.key))
-      transitions = jira.instance.transitions(task)
-      self.log.err("After cancelling task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
-      jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_CANCELLED'])
-      self.log.err("Transition task {} to cancelled (again)".format(task.key))
-      transitions = jira.instance.transitions(task)
-      self.log.err("After second cancellation of task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
-    if crq is not None:
-      jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_CANCELLED'])
-      self.log.err("Transitioned change request {} to cancelled".format(crq.key))
+    self.log.err("Failed to start {} and transition to implementation".format(issue.key))
+    jira.fail_crq(issue, "Failing change after errors moving ticket to implementation")
+    self.log.msg("Failed change request {}".format(issue.key))
     raise e
-
-def plan_update(self, pool, id_to_template):
-  task = crq = None
+  one_proxy = OneProxy(pool.cluster.zone.xmlrpc_uri, pool.cluster.zone.session_string, verify_certs=False)
+  self.log.msg("starting task to expand pool {} under {}".format(pool.name, issue.key))
+  Session.begin_nested()
+  exception = None
   try:
-    pool = Session.merge(pool)
-    start, end = jira.next_immediate_window_dates()
-    logging = jira.instance.issue('SVC-1020')
-    crq = jira.instance.create_issue(
-      project=app.config['JIRA_CRQ_PROJECT'],
-      issuetype={'name': 'Change Request'},
-      assignee={'name': app.config['JIRA_USERNAME']},
-      summary="[IMPLEMENT] {}".format(self.task.name),
-      description=self.task.description,
-      customfield_14530=start,
-      customfield_14531=end,
-      customfield_19031={'value': 'Maintenance'},
-      customfield_15152=[{'value': 'Global'}],
-      customfield_19430={'value': 'No conflict with any restrictions'},
-      customfield_14135={'value': 'IPG', 'child': {'value': 'IPG Big Data'}},
-      customfield_17679="Pool update required")
-    self.log.msg("Created change request: {}".format(crq.key))
-    jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_PLANNING'])
-    self.log.msg("Transitioned {} to planning".format(crq.key))
-    jira.instance.create_issue_link('Relate', crq, logging)
-    self.log.msg("Related {} to LOGGING service {}".format(crq.key, logging.key))
-    task = jira.instance.create_issue(
-      issuetype={'name': 'MOP Task'},
-      assignee={'name': app.config['JIRA_USERNAME']},
-      project=app.config['JIRA_CRQ_PROJECT'],
-      summary='[IMPLEMENTATION TASK] {}'.format(self.task.name),
-      parent={'key': crq.key},
-      customfield_14135={'value': 'IPG', 'child': {'value': 'IPG Big Data'}},
-      customfield_15150={'value': 'No'})
-    self.log.msg("Created task: {}".format(task.key))
-    jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_PLANNING'])
-    self.log.msg("Transitioned {} to planning".format(task.key))
-    env = Environment(loader=ObjectLoader())
-    for vm_id, vm_template in id_to_template.items():
-      filename = '{}.{}.template'.format(pool.id, vm_id)
-      attachment_content = io.StringIO(vm_template)
-      jira.instance.add_attachment(
-        issue=task,
-        filename=filename,
-        attachment=attachment_content)
-      self.log.msg("Attached template for {} to task {}".format(filename, task.key))
-    jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_WRITTEN'])
-    self.log.msg("Transitioned task {} to written".format(task.key))
-    jira.approver_instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_APPROVED'])
-    self.log.msg("Approved task {}".format(task.key))
-    jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_PLANNED_CHANGE'])
-    self.log.msg("Transitioned task {} to approved".format(task.key))
-    jira.approver_instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_APPROVED'])
-    self.log.msg("Transitioned change request {} to approved".format(crq.key))
-    self.log.msg("Task ID {}".format(self.task.id))
-    db_ticket = PoolTicket(
-      pool=pool,
-      action_id=PoolTicketActions.update.value,
-      ticket_key=crq.key,
-      task=self.task)
-    Session.add(db_ticket)
+    for t in issue.fields.subtasks:
+      if exception:
+        jira.fail_task(t)
+        self.log.err("cancelled {} after previous sub-task encourtered error".format(t.key))
+        continue
+      try:
+        jira.start_task(t)
+        self.log.msg("Transitioned sub task {} to implementation".format(t.key))
+        t2 = jira.instance.issue(t.key)
+        for a in t2.fields.attachment:
+          template = a.get().decode(encoding="utf-8", errors="strict")
+          vm_id = one_proxy.create_vm(template=template)
+          new_vm_ids.append(vm_id)
+          self.log.msg("allocated vm: {} as ID={}".format(a.filename, vm_id))
+          m = PoolMembership(pool=pool, vm_id=vm_id, template=a.get(), date_added=datetime.utcnow())
+          Session.add(m)
+        jira.complete_task(t)
+        raise Exception("purposefully injected error")
+
+      except Exception as e:
+        raise e
+        exception = e
+        jira.fail_task(t, app.config['JIRA_RESOLUTION_FAILED'])
+        self.log.err("failed task {} after error: {}".format(t.key, e))
+    if exception:
+      raise exception
+    pool_ticket.done = True
+    Session.merge(pool_ticket)
     Session.commit()
-    Session.remove()
   except Exception as e:
-    if task is not None:
-      jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_CANCELLED'])
-      self.log.err("Transitioned task {} to cancelled".format(task.key))
-      transitions = jira.instance.transitions(task)
-      self.log.err("After cancelling task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
-      jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_CANCELLED'])
-      self.log.err("Transition task {} to cancelled (again)".format(task.key))
-      transitions = jira.instance.transitions(task)
-      self.log.err("After second cancellation of task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
-    if crq is not None:
-      jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_CANCELLED'])
-      self.log.err("Transitioned change request {} to cancelled".format(crq.key))
     raise e
-
-def plan_shrink(self, pool, shrink_members):
-  task = crq = None
-  try:
-    pool = Session.merge(pool)
-    start, end = jira.next_immediate_window_dates()
-    logging = jira.instance.issue('SVC-1020')
-    crq = jira.instance.create_issue(
-      project=app.config['JIRA_CRQ_PROJECT'],
-      issuetype={'name': 'Change Request'},
-      assignee={'name': app.config['JIRA_USERNAME']},
-      summary="[IMPLEMENT] {}".format(self.task.name),
-      description=self.task.description,
-      customfield_14530=start,
-      customfield_14531=end,
-      customfield_19031={'value': 'Maintenance'},
-      customfield_15152=[{'value': 'Global'}],
-      customfield_19430={'value': 'No conflict with any restrictions'},
-      customfield_14135={'value': 'IPG', 'child': {'value': 'IPG Big Data'}},
-      customfield_17679="Pool shrink required")
-    self.log.msg("Created change request: {}".format(crq.key))
-    jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_PLANNING'])
-    self.log.msg("Transitioned {} to planning".format(crq.key))
-    jira.instance.create_issue_link('Relate', crq, logging)
-    self.log.msg("Related {} to LOGGING service {}".format(crq.key, logging.key))
-    task = jira.instance.create_issue(
-      issuetype={'name': 'MOP Task'},
-      assignee={'name': app.config['JIRA_USERNAME']},
-      project=app.config['JIRA_CRQ_PROJECT'],
-      summary='[IMPLEMENTATION TASK] {}'.format(self.task.name),
-      parent={'key': crq.key},
-      customfield_14135={'value': 'IPG', 'child': {'value': 'IPG Big Data'}},
-      customfield_15150={'value': 'No'})
-    self.log.msg("Created task: {}".format(task.key))
-    jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_PLANNING'])
-    self.log.msg("Transitioned {} to planning".format(task.key))
-    for m in [Session.merge(m) for m in shrink_members]:
-      filename = '{}.{}.template'.format(pool.id, m.vm_id)
-      attachment_content = io.StringIO(m.template)
-      jira.instance.add_attachment(
-        issue=task,
-        filename=filename,
-        attachment=attachment_content)
-      self.log.msg("Attached member {} to shrink to task {}".format(filename, task.key))
-    jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_WRITTEN'])
-    self.log.msg("Transitioned task {} to written".format(task.key))
-    jira.approver_instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_APPROVED'])
-    self.log.msg("Approved task {}".format(task.key))
-    jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_PLANNED_CHANGE'])
-    self.log.msg("Transitioned task {} to approved".format(task.key))
-    jira.approver_instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_APPROVED'])
-    self.log.msg("Transitioned change request {} to approved".format(crq.key))
-    self.log.msg("Task ID {}".format(self.task.id))
-    db_ticket = PoolTicket(
-      pool=pool,
-      action_id=PoolTicketActions.update.value,
-      ticket_key=crq.key,
-      task=self.task)
-    Session.add(db_ticket)
-    Session.commit()
-    Session.remove()
-  except Exception as e:
-    if task is not None:
-      jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_CANCELLED'])
-      self.log.err("Transitioned task {} to cancelled".format(task.key))
-      transitions = jira.instance.transitions(task)
-      self.log.err("After cancelling task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
-      jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_CANCELLED'])
-      self.log.err("Transition task {} to cancelled (again)".format(task.key))
-      transitions = jira.instance.transitions(task)
-      self.log.err("After second cancellation of task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
-    if crq is not None:
-      jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_CANCELLED'])
-      self.log.err("Transitioned change request {} to cancelled".format(crq.key))
+    Session.rollback()
+    jira.fail_crq(issue)
+    self.log.err("failed task {} after errors were encountered".format(issue.key))
+    defect = jira.defect_for_exception(summary_title="expand failed", tb=traceback.format_exc(), e=e, username='ticket_script')
+    self.log.err("There was an exception: {}, created defect: {}".format(e, defect.key))
+    self.log.msg("Entering into cleanup mode")
+    self.log.msg("Trying to clean up {} new VMs".format(len(new_vm_ids)))
+    for kill_id in new_vm_ids:
+      try:
+        one_proxy.kill_vm(vm_id=kill_id)
+        self.log.msg("killed VM ID {}".format(vm_id))
+      except Exception as e2:
+        self.log.err("Exception killing vm_id={}, error: {}".format(kill_id, e2))
     raise e

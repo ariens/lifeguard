@@ -7,7 +7,9 @@ from app.views.vpool.models import PoolTicket, PoolTicketActions
 
 def plan_expansion(self, pool, expansion_names):
   task = crq = None
+  #session = Session()
   try:
+    #with session.begin_nested():
     pool = Session.merge(pool)
     start, end = jira.next_immediate_window_dates()
     logging = jira.instance.issue('SVC-1020')
@@ -66,26 +68,16 @@ def plan_expansion(self, pool, expansion_names):
     self.log.msg("Transitioned change request {} to approved".format(crq.key))
     self.log.msg("Task ID {}".format(self.task.id))
     db_ticket = PoolTicket(
-      pool=pool,
+      pool=Session.merge(pool),
       action_id=PoolTicketActions.expand.value,
       ticket_key=crq.key,
       task=Session.merge(self.task))
     Session.add(db_ticket)
     Session.commit()
-    Session.remove()
   except Exception as e:
-    if task is not None:
-      jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_CANCELLED'])
-      self.log.err("Transitioned task {} to cancelled".format(task.key))
-      transitions = jira.instance.transitions(task)
-      self.log.err("After cancelling task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
-      jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_CANCELLED'])
-      self.log.err("Transition task {} to cancelled (again)".format(task.key))
-      transitions = jira.instance.transitions(task)
-      self.log.err("After second cancellation of task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
+    Session.rollback()
     if crq is not None:
-      jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_CANCELLED'])
-      self.log.err("Transitioned change request {} to cancelled".format(crq.key))
+      jira.cancel_crq_and_tasks(crq, comment="failure creating change tickets")
     raise e
 
 def plan_update(self, pool, id_to_template):

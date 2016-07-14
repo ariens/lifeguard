@@ -74,6 +74,11 @@ class JiraApi():
             crq,
             'JIRA_TRANSITION_CRQ_SCHEDULED_TO_CANCELLED',
             comment=comment)
+        elif str(crq.fields.status).lower() == 'itcm/trm':
+          self.transition_issue(
+            crq,
+            'JIRA_TRANSITION_CRQ_CANCELLED',
+            comment=comment)
       except Exception as e:
         logging.error("Error: {}".format(e))
         exceptions.append(e)
@@ -114,8 +119,6 @@ class JiraApi():
                           'JIRA_TRANSITION_TASK_CLOSED',
                           resolution={'id': app.config['JIRA_RESOLUTION_CANCELLED']},
                           customfield_15235={"id": "18798"})
-
-
 
 
   @staticmethod

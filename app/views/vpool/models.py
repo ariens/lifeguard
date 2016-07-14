@@ -164,14 +164,14 @@ class VirtualMachinePool(Base):
     return update_ids
 
   def pending_ticket(self, action):
-    return PoolTicket.query.filter_by(pool=self, action_id=action.value, done=False).first()
+    return Session.query(PoolTicket).filter_by(pool=self, action_id=action.value, done=False).first()
 
   @staticmethod
   def get_all(cluster):
-    return Session().query(VirtualMachinePool).filter_by(cluster=cluster)
+    return Session.query(VirtualMachinePool).filter_by(cluster=cluster)
 
   def get_peer_pools(self):
-    return Session().query(VirtualMachinePool).filter_by(cluster=self.cluster)
+    return Session.query(VirtualMachinePool).filter_by(cluster=self.cluster)
 
   def get_dns_ips(self):
     return [rec.to_text() for rec in DdnsAuditor.get_records(self.name)]

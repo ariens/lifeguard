@@ -110,7 +110,6 @@ class TaskThread(Thread):
     self.task.status = TaskStatus.running.value
     Session.merge(self.task)
     Session.commit()
-    Session.remove()
     try:
       self.run_function(**kwargs)
 

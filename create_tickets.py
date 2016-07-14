@@ -18,7 +18,7 @@ def worker(name):
   while True:
     work = q.get()
     members = work['members']
-    pool = Session.merge(work['pool'])
+    pool = work['pool']
     try:
       logging.info("[{}] assigned tickets for pool {}".format(name, pool.name))
       create_tickets(name, pool, members)
@@ -57,58 +57,58 @@ def create_tickets(name, pool, members):
       Session.commit()
       task_thread = TaskThread(task=task,
                                run_function=plan_expansion,
-                               pool=pool,
+                               pool=Session.merge(pool),
                                expansion_names=expansion_names)
-      task_thread.start()
       threads.append(task_thread)
       logging.info("[{}] launched background task {} to {}".format(name, task.id, title))
 
 def execute_tickets(name, pool):
-  for t in pool.change_tickets:
-    if t.done == False:
-      logging.info("[{}] fetching {}".format(name, t.ticket_key))
-      crq = jira.instance.issue(t.ticket_key)
-      if JiraApi.expired(crq):
-        logging.info("[{}] {} has expired".format(name, crq.key))
-        jira.cancel_crq_and_tasks(crq, "change has expired")
-        t.done = True
-        Session.add(t)
-        Session.commit()
-        logging.info("[{}] marked {} ticket {} as done for pool {} as crq is expired".format(
-          name, t.action_name(), t.ticket_key, pool.name))
-        continue
-      elif JiraApi.in_window(crq):
-        if jira.is_ready(crq):
-          title = "{} pool {} under ticket {}".format(t.action_name(), pool.name, crq.key)
-          task = Task(
-            name=title,
-            description=title,
-            username="ticket_script")
-          Session.add(task)
-          Session.commit()
-          runnable = None
-          if t.action_id == PoolTicketActions.expand.value:
-            runnable = expand
-          if runnable is None:
-            raise Exception("t.action_id is not a supported action to implement")
-          task_thread = TaskThread(task=task,
-                                   run_function=runnable,
-                                   pool=pool,
-                                   pool_ticket=t,
-                                   issue=crq)
-          task_thread.start()
-          threads.append(task_thread)
-          logging.info("[{}] launched background task {} to {}".format(name, task.id, title))
+  #TODO: Remove this which ensures we'll only action a single ticket
+  tickets = pool.change_tickets
+  single_ticket = [tickets.pop()]
+  for t in tickets:
+    try:
+      if t.done == False:
+        logging.info("[{}] fetching {}".format(name, t.ticket_key))
+        crq = jira.instance.issue(t.ticket_key)
+        if JiraApi.expired(crq):
+          logging.info("[{}] {} has expired".format(name, crq.key))
+          jira.cancel_crq_and_tasks(crq, "change has expired")
+          t.done = True
+          Session.add(t)
+          logging.info("[{}] marked {} ticket {} as done for pool {} as crq is expired".format(
+            name, t.action_name(), t.ticket_key, pool.name))
+          continue
+        elif JiraApi.in_window(crq):
+          logging.info("change {} is in window".format(crq.key))
+          if jira.is_ready(crq):
+            title = "{} pool {} under ticket {}".format(t.action_name(), pool.name, crq.key)
+            task = Task(
+              name=title,
+              description=title,
+              username="ticket_script")
+            runnable = None
+            if t.action_id == PoolTicketActions.expand.value:
+              runnable = expand
+            if runnable is None:
+              raise Exception("t.action_id is not a supported action to implement")
+            Session.add(task)
+            Session.commit()
+            task_thread = TaskThread(task=task,
+                                     run_function=runnable,
+                                     pool=pool,
+                                     pool_ticket=t,
+                                     issue=crq)
+            threads.append(task_thread)
+            logging.info("[{}] launched background task {} to {}".format(name, task.id, title))
+          else:
+            logging.error("[{}] {} is in window and either it or one or "
+                          "more sub tasks are not ready".format(name, crq.key))
         else:
-          logging.error("[{}] {} is in window and either it or one or "
-                        "more sub tasks are not ready".format(name, crq.key))
-      else:
-        logging.info("[{}] {} ticket for pool {} not yet in window".format(
-          name, t.action_name(), pool.name, crq.key))
-
-    #TODO: Remove the break after we're done testing one at a time
-    logging.info("breaking out early as we're testing one at a time")
-    break
+          logging.info("[{}] {} change {} for pool {} not yet in window".format(
+            name, t.action_name(), crq.key, pool.name))
+    except Exception as e:
+      logging.error("error executing {}: {}".format(t.ticket_key, e))
 
 if __name__ == "__main__":
   q = Queue()
@@ -123,7 +123,6 @@ if __name__ == "__main__":
     logging.info("retreived pool: {}".format(pool.name))
     q.put({'pool': pool,
            'members': members})
-
   for i in range(app.config['NUM_HEALTH_CHECK_THREADS']):
     t = Thread(target=worker, kwargs={'name': 'worker_{}'.format(i)})
     t.daemon = True
@@ -131,6 +130,10 @@ if __name__ == "__main__":
   q.join()
   logging.info("Queue is now empty, {} threads created".format(len(threads)))
   for t in threads:
+    logging.info("starting thread {}-{}".format(t.ident, t.name))
+    t.start()
+  for t in threads:
     logging.info("joining thread {}-{}".format(t.ident, t.name))
     t.join()
     logging.info("thread {}-{} finished".format(t.ident, t.name))
+  logging.info("finished")

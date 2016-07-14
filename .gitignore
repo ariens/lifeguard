@@ -2,3 +2,5 @@ settings.cfg
 python
 __pycache__
 .idea
+clean_crqs.py
+clean_defects.py

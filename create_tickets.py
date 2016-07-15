@@ -63,10 +63,7 @@ def create_tickets(name, pool, members):
       logging.info("[{}] launched background task {} to {}".format(name, task.id, title))
 
 def execute_tickets(name, pool):
-  #TODO: Remove this which ensures we'll only action a single ticket
-  tickets = pool.change_tickets
-  single_ticket = [tickets.pop()]
-  for t in tickets:
+  for t in pool.change_tickets:
     try:
       if t.done == False:
         logging.info("[{}] fetching {}".format(name, t.ticket_key))
@@ -78,29 +75,31 @@ def execute_tickets(name, pool):
           Session.add(t)
           logging.info("[{}] marked {} ticket {} as done for pool {} as crq is expired".format(
             name, t.action_name(), t.ticket_key, pool.name))
-          continue
         elif JiraApi.in_window(crq):
           logging.info("change {} is in window".format(crq.key))
           if jira.is_ready(crq):
-            title = "{} pool {} under ticket {}".format(t.action_name(), pool.name, crq.key)
-            task = Task(
-              name=title,
-              description=title,
-              username="ticket_script")
-            runnable = None
-            if t.action_id == PoolTicketActions.expand.value:
-              runnable = expand
-            if runnable is None:
-              raise Exception("t.action_id is not a supported action to implement")
-            Session.add(task)
-            Session.commit()
-            task_thread = TaskThread(task=task,
-                                     run_function=runnable,
-                                     pool=pool,
-                                     pool_ticket=t,
-                                     issue=crq)
-            threads.append(task_thread)
-            logging.info("[{}] launched background task {} to {}".format(name, task.id, title))
+            try:
+              title = "{} pool {} under ticket {}".format(t.action_name(), pool.name, crq.key)
+              task = Task(
+                name=title,
+                description=title,
+                username="ticket_script")
+              runnable = None
+              if t.action_id == PoolTicketActions.expand.value:
+                runnable = expand
+              if runnable is None:
+                raise Exception("t.action_id is not a supported action to implement")
+              Session.add(task)
+              Session.commit()
+              task_thread = TaskThread(task=task,
+                                       run_function=runnable,
+                                       pool=pool,
+                                       pool_ticket=t,
+                                       issue=crq)
+              threads.append(task_thread)
+              logging.info("[{}] launched background task {} to {}".format(name, task.id, title))
+            finally:
+              break
           else:
             logging.error("[{}] {} is in window and either it or one or "
                           "more sub tasks are not ready".format(name, crq.key))

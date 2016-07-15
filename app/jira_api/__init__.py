@@ -89,17 +89,22 @@ class JiraApi():
   def start_crq(self, crq, comment):
     self.transition_issue(crq, 'JIRA_TRANSITION_CRQ_IMPLEMENTATION', comment=comment)
 
-  def cancel_and_fail_crq(self, crq):
+  @staticmethod
+  def get_now():
     utc = pytz.utc
     tz = pytz.timezone(app.config['CM_TZ'])
     now_utc = utc.localize(datetime.utcnow())
     now_tz = now_utc.astimezone(tz)
     now_jira = now_tz.strftime(JiraApi.str_jira_scheduled)
+    return now_jira
+
+
+  def cancel_and_fail_crq(self, crq):
     self.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_CLOSE'],
                                    resolution={'id': app.config['JIRA_RESOLUTION_CANCELLED']},
                                    customfield_15235={"id": app.config['JIRA_RESOLUTION_DETAILS_UNSUCCESSFUL']},
-                                   customfield_16430=now_jira,
-                                   customfield_16431=now_jira,
+                                   customfield_16430=JiraApi.get_now(),
+                                   customfield_16431=JiraApi.get_now(),
                                    comment="change cancelled upon failure")
 
 
@@ -108,10 +113,22 @@ class JiraApi():
                           'JIRA_TRANSITION_TASK_IMPLEMENTATION',
                           comment=comment)
 
-  def complete_task(self, task, comment):
+  def complete_task(self, task, comment, start_time):
     self.transition_issue(task,
                           'JIRA_TRANSITION_TASK_CLOSED',
                           resolution={'id': app.config['JIRA_RESOLUTION_COMPLETED']},
+                          customfield_15235={"id": app.config['JIRA_RESOLUTION_DETAILS_SUCCESSFUL']},
+                          customfield_16430=start_time,
+                          customfield_16431=JiraApi.get_now(),
+                          comment=comment)
+
+  def complete_crq(self, crq, comment, start_time):
+    self.transition_issue(crq,
+                          'JIRA_TRANSITION_CRQ_CLOSE',
+                          resolution={'id': app.config['JIRA_RESOLUTION_COMPLETED']},
+                          customfield_15235={"id": app.config['JIRA_RESOLUTION_DETAILS_SUCCESSFUL']},
+                          customfield_16430=start_time,
+                          customfield_16431=JiraApi.get_now(),
                           comment=comment)
 
   def fail_task(self, task):

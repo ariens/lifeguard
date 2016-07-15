@@ -1,6 +1,7 @@
 from app.database import Session
 from app.one import OneProxy
 from app import app, jira
+from app.jira_api import JiraApi
 from app.views.vpool.models import PoolMembership
 import traceback
 from datetime import datetime
@@ -14,10 +15,12 @@ def expand(self, pool, pool_ticket, issue):
   try:
     with Session.begin_nested():
       jira.start_crq(issue, comment="starting change")
+      c_start = JiraApi.get_now()
       self.log.msg("starting change {}, ticket moved to implementation".format(issue.key))
       self.log.msg("starting task to expand pool {} under {}".format(pool.name, issue.key))
       for t in issue.fields.subtasks:
         jira.start_task(t, comment="starting task")
+        t_start = JiraApi.get_now()
         self.log.msg("started sub task {}".format(t.key))
         t2 = jira.instance.issue(t.key)
         for a in t2.fields.attachment:
@@ -27,11 +30,14 @@ def expand(self, pool, pool_ticket, issue):
           m = PoolMembership(pool=pool, vm_id=vm_id, template=a.get(), date_added=datetime.utcnow())
           Session.merge(m)
           self.log.msg("created new vm: {}".format(a.filename))
-        jira.complete_task(t, comment="completed task")
-      Session.commit()
+        jira.complete_task(t, comment="completed task", start_time=t_start)
+        self.log.msg("marked task {} as completed successfully".format(t.key))
+      jira.complete_crq(issue, comment="completed task", start_time=c_start)
+      self.log.msg("marked crq {} as completed successfully".format(issue.key))
       self.log.msg("change {} completed successfully".format(issue.key))
+    Session.commit()
   except Exception as e:
-    self.log.error("Error occured: {}".format(e))
+    self.log.err("Error occured: {}".format(e))
     jira.cancel_crq_and_tasks(issue, "an exception occured running this change: {}".format(e))
     self.log.msg("Trying to clean up {} new VMs".format(len(new_vm_ids)))
     for kill_id in new_vm_ids:
@@ -42,7 +48,8 @@ def expand(self, pool, pool_ticket, issue):
         self.log.err("Exception killing vm_id={}, error: {}".format(kill_id, e2))
     raise e
   finally:
-    with Session.begin_nested:
+    with Session.begin_nested():
       pool_ticket.done = True
       Session.merge(pool_ticket)
-      Session.commit()
+    Session.commit()
+

@@ -9,6 +9,7 @@ import traceback, sys
 from sqlalchemy import Column, Integer, String, DateTime, Text
 from flask import url_for
 import types
+import logging
 
 class TaskResult(Enum):
   success = 0
@@ -93,7 +94,7 @@ class Task(Base):
 class TaskThread(Thread):
   def __init__(self, task, run_function, log=None, **kwargs):
     if None in [task, run_function]:
-      raise Exception("Required parameter(s) is None: task={}, run_function={}".format(task_id, run_function))
+      raise Exception("Required parameter(s) is None: task={}, run_function={}".format(task, run_function))
     if log is not None:
       self.log = log
     else:
@@ -143,7 +144,7 @@ class DumbLog:
 
   I didn't look to hard at Python's Logger to determine if there was a way to extract all logged messages
   and obtian them as strings.  I imagine that it would have been possible via a custom adapter or other
-  Logger compatible construct, however I opted to just get something basic work that captured my requirements.
+  Logger compatible construct, however I opted to just get something basic working that captured my requirements.
   Perhaps this can be pulled out and done properly once time allows.
 
   Performance of this should be expected to be poor but sufficient for small numbers of messages.
@@ -156,6 +157,7 @@ class DumbLog:
 
   def msg(self, raw_msg):
     """log  a regular message"""
+    logging.info(raw_msg)
     d = datetime.utcnow().strftime(self.date_fmt)
     msg = "{}: {}".format(d, raw_msg)
     if self.messages is not None:
@@ -165,6 +167,7 @@ class DumbLog:
       self.messages = msg
 
   def err(self, raw_msg):
+    logging.error(raw_msg)
     """log an error"""
     self.contains_errors = True
     d = datetime.utcnow().strftime(self.date_fmt)

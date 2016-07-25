@@ -4,7 +4,7 @@ from sqlalchemy.ext.declarative import declarative_base
 
 from app import app
 
-engine = create_engine(app.config['SQLALCHEMY_DATABASE_URI'])
+engine = create_engine(app.config['SQLALCHEMY_DATABASE_URI'], pool_recycle=3600)
 session_factory = sessionmaker(bind=engine)
 Session = scoped_session(session_factory)
 

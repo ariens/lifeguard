@@ -33,10 +33,11 @@ class VirtualMachinePool(Base):
     primaryjoin="and_(VirtualMachinePool.cluster_id == Cluster.id, VirtualMachinePool.zone_number == Cluster.zone_number)",
     foreign_keys=[cluster_id, zone_number])
 
-  def __init__(self, id=None, name=None, zone_number=None, cluster_id=None, cardinality=None):
+  def __init__(self, id=None, name=None, zone_number=None, cluster_id=None, cluster=None, cardinality=None):
     self.id = id
     self.name = name
     self.cluster_id = cluster_id
+    self.cluster = cluster
     self.zone_number = zone_number
     self.cardinality = cardinality
 
@@ -148,20 +149,20 @@ class VirtualMachinePool(Base):
                           "review and confirm again: {}".format(form_name))
     return expansion_names
 
-  def get_update_ids(self, members, form_update_ids=None):
-    update_ids = []
+  def get_update_members(self, members, form_update_ids=None):
+    update_members = []
     for m in members:
       if not m.is_current():
         if form_update_ids is not None:
           if str(m.vm.id) in form_update_ids:
-            update_ids.append(m.vm.id)
+            update_members.append(m)
           else:
             raise Exception("A VM was determined to require and update "
                             "however it was not present in earlier form "
                             "submission (try re-submitting again)")
         else:
-          update_ids.append(m.vm.id)
-    return update_ids
+          update_members.append(m)
+    return update_members
 
   def pending_ticket(self, action):
     return Session.query(PoolTicket).filter_by(pool=self, action_id=action.value, done=False).first()
@@ -226,7 +227,7 @@ class PoolMembership(Base):
   def parse_number(self):
     if self.vm is None:
       raise Exception("cannot determine number from virtual machine name when vm is None")
-    num_pattern = re.compile("^[\dA-Za-z]+\D(\d+)\.")
+    num_pattern = re.compile("^[-\dA-Za-z]+\D(\d+)\.")
     match = num_pattern.match(self.vm.name)
     if match is not None:
       return int(match.group(1))

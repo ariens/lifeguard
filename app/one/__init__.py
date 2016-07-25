@@ -230,6 +230,7 @@ class OneProxy:
     :param vm: VirtualMachine
     :return:
     """
+    # Note these get popped off, so they are attempted in reverse order
     pre_active_kill_cmds = ['delete', 'delete', 'cancel']
     post_active_kill_cmds = ['cancel', 'shutdown-hard', 'shutdown']
     attempted_cmds = []

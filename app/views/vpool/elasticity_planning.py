@@ -80,7 +80,7 @@ def plan_expansion(self, pool, expansion_names):
       jira.cancel_crq_and_tasks(crq, comment="failure creating change tickets")
     raise e
 
-def plan_update(self, pool, id_to_template):
+def plan_update(self, pool, update_members):
   task = crq = None
   try:
     pool = Session.merge(pool)
@@ -116,9 +116,9 @@ def plan_update(self, pool, id_to_template):
     jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_PLANNING'])
     self.log.msg("Transitioned {} to planning".format(task.key))
     env = Environment(loader=ObjectLoader())
-    for vm_id, vm_template in id_to_template.items():
-      filename = '{}.{}.template'.format(pool.id, vm_id)
-      attachment_content = io.StringIO(vm_template)
+    for m in update_members:
+      filename = '{}.{}.template'.format(m.pool.id, m.vm_id)
+      attachment_content = io.StringIO(m.current_template())
       jira.instance.add_attachment(
         issue=task,
         filename=filename,
@@ -142,18 +142,9 @@ def plan_update(self, pool, id_to_template):
     Session.commit()
     Session.remove()
   except Exception as e:
-    if task is not None:
-      jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_CANCELLED'])
-      self.log.err("Transitioned task {} to cancelled".format(task.key))
-      transitions = jira.instance.transitions(task)
-      self.log.err("After cancelling task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
-      jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_CANCELLED'])
-      self.log.err("Transition task {} to cancelled (again)".format(task.key))
-      transitions = jira.instance.transitions(task)
-      self.log.err("After second cancellation of task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
+    Session.rollback()
     if crq is not None:
-      jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_CANCELLED'])
-      self.log.err("Transitioned change request {} to cancelled".format(crq.key))
+      jira.cancel_crq_and_tasks(crq, comment="failure creating change tickets")
     raise e
 
 def plan_shrink(self, pool, shrink_members):
@@ -210,23 +201,14 @@ def plan_shrink(self, pool, shrink_members):
     self.log.msg("Task ID {}".format(self.task.id))
     db_ticket = PoolTicket(
       pool=pool,
-      action_id=PoolTicketActions.update.value,
+      action_id=PoolTicketActions.shrink.value,
       ticket_key=crq.key,
       task=Session.merge(self.task))
     Session.add(db_ticket)
     Session.commit()
     Session.remove()
   except Exception as e:
-    if task is not None:
-      jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_CANCELLED'])
-      self.log.err("Transitioned task {} to cancelled".format(task.key))
-      transitions = jira.instance.transitions(task)
-      self.log.err("After cancelling task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
-      jira.instance.transition_issue(task, app.config['JIRA_TRANSITION_TASK_CANCELLED'])
-      self.log.err("Transition task {} to cancelled (again)".format(task.key))
-      transitions = jira.instance.transitions(task)
-      self.log.err("After second cancellation of task the available transitions are: {}".format([(t['id'], t['name']) for t in transitions]))
+    Session.rollback()
     if crq is not None:
-      jira.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_CANCELLED'])
-      self.log.err("Transitioned change request {} to cancelled".format(crq.key))
+      jira.cancel_crq_and_tasks(crq, comment="failure creating change tickets")
     raise e

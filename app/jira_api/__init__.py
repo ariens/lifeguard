@@ -229,9 +229,10 @@ class JiraApi():
 
   def defect_for_exception(self, summary_title, e, tb=None, username=None, description=None):
     if username is None:
-      username = current_user.username
-    if username is None:
-      username = "nobody"
+      try:
+        username = current_user.username
+      except:
+        username = "nobody"
     if tb is None:
       tb = traceback.format_exc()
     problem = "An {} exception occured".format(e)
@@ -245,8 +246,6 @@ class JiraApi():
       description=description,
       customfield_13842=JiraApi.get_datetime_now(),
       customfield_13838= {"value": "No"},
-      customfield_13831 =  [
-        {"value": "Quality"},
-        {"value": "Risk Avoidance"}
-      ],
+      customfield_13831 =  [{"value": "Quality"},
+                            {"value": "Risk Avoidance"}],
       issuetype={'name': 'Defect'})

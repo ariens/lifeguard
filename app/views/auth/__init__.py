@@ -36,14 +36,19 @@ def login():
         'Invalid username or password. Please try again.',
         'danger')
       return render_template('auth/login.html', form=form)
-    user = User.query.filter_by(username=username).first()
-    if not user:
-      user = User(username)
-      Session.add(user)
-      Session.commit()
-    login_user(user)
-    flash('You have successfully logged in.', 'success')
-    return redirect(url_for('auth.home'))
+    try:
+      with Session.begin_nested():
+        user = User.query.filter_by(username=username).first()
+        if not user:
+          user = User(username)
+          Session.add(user)
+          Session.commit()
+        login_user(user)
+        flash('You have successfully logged in.', category='success')
+      return redirect(url_for('auth.home'))
+    except Exception as e:
+      flash('There was an error logging in: {}'.format(e), category='danger')
+      raise e
   if form.errors:
     flash(form.errors, 'danger')
   return render_template('auth/login.html', form=form)

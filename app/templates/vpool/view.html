@@ -3,7 +3,7 @@
 {% block page_title %}
     <a href="{{ url_for('zone_bp.list') }}">Zones</a>
     / <a href="{{ url_for('zone_bp.view', zone_number=pool.zone_number) }}">{{ pool.cluster.zone.name }}</a>
-    / <a href="{{ url_for('cluster_bp.view', zone_number=pool.zone_number, cluster_id=pool.cluster_id) }}">{{ pool.cluster.name }}</a>
+    / <a href="{{ url_for('cluster_bp.view', zone_number=pool.zone_number, cluster_id=pool.cluster.id) }}">{{ pool.cluster.name }}</a>
     / {{ pool.name }}
 {% endblock %}
 

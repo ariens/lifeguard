@@ -93,6 +93,8 @@ def shrink(pool_id):
     flash("There was an error determining memberships for shrinking: {}".format(e), category='danger')
     return redirect(url_for('vpool_bp.view', pool_id=pool.id))
   if request.method == 'POST' and form.validate() and request.form['action'] == 'shrink':
+
+
     title = 'Plan Shrink => Pool {} ({} members to {})'.format(pool.name, len(members), pool.cardinality)
     description = "Pool shrink triggered that will shutdown {} VM(s): \n\n*{}".format(
           len(shrink_members),
@@ -170,6 +172,7 @@ def update(pool_id):
   members = pool.get_memberships()
   update_ids = pool.get_update_ids(members, form_update_ids)
   if request.method == 'POST' and form.validate() and request.form['action'] == 'update':
+
     id_to_template = {}
     for m in members:
       if m.vm.id in update_ids:
@@ -311,6 +314,46 @@ def edit(pool_id):
                          form=form,
                          members=members,
                          pool=pool)
+
+@vpool_bp.route('/vpool/create/<int:zone_number>/<int:cluster_id>', methods=['GET', 'POST'])
+@login_required
+def create_new_pool(zone_number, cluster_id):
+  try:
+    zone = Zone.query.get(zone_number)
+    cluster = Cluster.query.filter_by(zone=zone, id=cluster_id).first()
+    form = pool = None
+    pool = VirtualMachinePool(zone_number=cluster.zone.number, cluster=cluster)
+    pools = VirtualMachinePool.query.filter_by(cluster_id=cluster.id, zone_number=cluster.zone_number).all()
+    form = PoolEditForm(request.form, obj=pool)
+  except Exception as e:
+    flash("There was an error fetching objects required for creating pool: {}".format(e))
+    return redirect(url_for('cluster_bp.view', zone_number=zone.number, cluster_id=cluster.id))
+  if request.method == 'POST':
+    if request.form['action'] == "cancel":
+      flash('Cancelled {} pool template update'.format(pool.name), category="info")
+      return redirect(url_for('vpool_bp.view', pool_id=pool.id))
+    elif request.form['action'] == "save":
+      try:
+        cardinality_pattern = re.compile("\d+")
+        pool.name = request.form['name']
+        pool.template = request.form['template']
+        pool.vars = request.form['vars']
+        if not cardinality_pattern.fullmatch(request.form['cardinality']):
+          raise Exception("Cardinality {} not numeric".format(request.form['cardinality']))
+        pool.cardinality = request.form['cardinality']
+        Session.add(pool)
+        Session.commit()
+        flash('Successfully saved pool template for {} (ID={}).'
+              .format(pool.name, pool.id), 'success')
+        return redirect(url_for('vpool_bp.view', pool_id=pool.id))
+      except Exception as e:
+        flash('Failed to save pool error: {}'.format(e), 'danger')
+  if form.errors:
+    flash("Errors must be resolved before pool can be saved", 'danger')
+  return render_template('vpool/create.html',
+                         form=form,
+                         pool=pool,
+                         pools=pools)
 
 @vpool_bp.route('/vpool/<int:pool_id>/generate_template', methods=['GET', 'POST'])
 @login_required

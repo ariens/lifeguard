@@ -17,6 +17,13 @@ class JiraApi():
     self.instance = instance
     self.approver_instance = approver_instance
 
+  @staticmethod
+  def add_cowboy_verbiage(comment):
+    return "{}  This change request was initiated in " \
+           "cowboy mode which means that all change " \
+           "management workflow, schedules, and " \
+           "status fields are being ignored.".format(comment)
+
   def transition_issue(self, issue, state_name, **kwargs):
     state_id = app.config[state_name]
     try:
@@ -86,8 +93,59 @@ class JiraApi():
       raise Exception("Caught {} exceptions trying to "
                       "cancel {} and it's sub-tasks".format(len(exceptions), crq))
 
-  def start_crq(self, crq, comment):
-    self.transition_issue(crq, 'JIRA_TRANSITION_CRQ_IMPLEMENTATION', comment=comment)
+  def start_crq(self, crq, log=None, cowboy_mode=False):
+    comment = "Starting change request {} to {}.".format(crq.key, crq.fields.summary)
+    if cowboy_mode:
+      comment = JiraApi.add_cowboy_verbiage(comment)
+    else:
+      self.transition_issue(crq, 'JIRA_TRANSITION_CRQ_IMPLEMENTATION', comment=comment)
+    if log:
+      log.msg(comment)
+
+  def complete_crq(self, crq, start_time, log=None, cowboy_mode=False):
+    comment = "Successfully completed CRQ {} to {}".format(crq.key, crq.fields.summary)
+    if cowboy_mode:
+      comment = JiraApi.add_cowboy_verbiage(comment)
+      self.cancel_crq_and_tasks(crq, comment=comment)
+    else:
+      self.transition_issue(
+        crq,
+        'JIRA_TRANSITION_CRQ_CLOSE',
+        resolution={'id': app.config['JIRA_RESOLUTION_COMPLETED']},
+        customfield_15235={"id": app.config['JIRA_RESOLUTION_DETAILS_SUCCESSFUL']},
+        customfield_16430=start_time,
+        customfield_16431=JiraApi.get_now(),
+        comment=comment)
+    if log:
+      log.msg(comment)
+
+  def start_task(self, task, log=None, cowboy_mode=False):
+    comment = "Starting task {} to {}.".format(task.key, task.fields.summary)
+    if cowboy_mode:
+      comment = "{}  This task was initiated in cowboy " \
+                "mode which means that all change management " \
+                "workflow, schedules, and status fields are being " \
+                "ignored.".format(comment)
+    else:
+      self.transition_issue(task, 'JIRA_TRANSITION_TASK_IMPLEMENTATION', comment=comment)
+    if log is not None:
+      log.msg(comment)
+
+  def complete_task(self, task, start_time, log=None, cowboy_mode=False):
+    comment = "Completed task {} to {}.".format(task.key, task.fields.summary)
+    if cowboy_mode:
+      comment = JiraApi.add_cowboy_verbiage(comment)
+    else:
+      self.transition_issue(
+        task,
+        'JIRA_TRANSITION_TASK_CLOSED',
+        resolution={'id': app.config['JIRA_RESOLUTION_COMPLETED']},
+        customfield_15235={"id": app.config['JIRA_RESOLUTION_DETAILS_SUCCESSFUL']},
+        customfield_16430=start_time,
+        customfield_16431=JiraApi.get_now(),
+        comment=comment)
+    if log:
+      log.msg(comment)
 
   @staticmethod
   def get_now():
@@ -97,46 +155,6 @@ class JiraApi():
     now_tz = now_utc.astimezone(tz)
     now_jira = now_tz.strftime(JiraApi.str_jira_scheduled)
     return now_jira
-
-
-  def cancel_and_fail_crq(self, crq):
-    self.instance.transition_issue(crq, app.config['JIRA_TRANSITION_CRQ_CLOSE'],
-                                   resolution={'id': app.config['JIRA_RESOLUTION_CANCELLED']},
-                                   customfield_15235={"id": app.config['JIRA_RESOLUTION_DETAILS_UNSUCCESSFUL']},
-                                   customfield_16430=JiraApi.get_now(),
-                                   customfield_16431=JiraApi.get_now(),
-                                   comment="change cancelled upon failure")
-
-
-  def start_task(self, task, comment):
-    self.transition_issue(task,
-                          'JIRA_TRANSITION_TASK_IMPLEMENTATION',
-                          comment=comment)
-
-  def complete_task(self, task, comment, start_time):
-    self.transition_issue(task,
-                          'JIRA_TRANSITION_TASK_CLOSED',
-                          resolution={'id': app.config['JIRA_RESOLUTION_COMPLETED']},
-                          customfield_15235={"id": app.config['JIRA_RESOLUTION_DETAILS_SUCCESSFUL']},
-                          customfield_16430=start_time,
-                          customfield_16431=JiraApi.get_now(),
-                          comment=comment)
-
-  def complete_crq(self, crq, comment, start_time):
-    self.transition_issue(crq,
-                          'JIRA_TRANSITION_CRQ_CLOSE',
-                          resolution={'id': app.config['JIRA_RESOLUTION_COMPLETED']},
-                          customfield_15235={"id": app.config['JIRA_RESOLUTION_DETAILS_SUCCESSFUL']},
-                          customfield_16430=start_time,
-                          customfield_16431=JiraApi.get_now(),
-                          comment=comment)
-
-  def fail_task(self, task):
-    self.transition_issue(task,
-                          'JIRA_TRANSITION_TASK_CLOSED',
-                          resolution={'id': app.config['JIRA_RESOLUTION_CANCELLED']},
-                          customfield_15235={"id": "18798"})
-
 
   @staticmethod
   def is_ready(issue):
@@ -244,8 +262,36 @@ class JiraApi():
       project=app.config['JIRA_PROJECT'],
       summary=summary_title,
       description=description,
+      issuetype={'name': 'Defect'},
       customfield_13842=JiraApi.get_datetime_now(),
       customfield_13838= {"value": "No"},
       customfield_13831 =  [{"value": "Quality"},
-                            {"value": "Risk Avoidance"}],
-      issuetype={'name': 'Defect'})
+                            {"value": "Risk Avoidance"}])
+
+  def defect_for_diagnostics(self, username, summary_title, diagnostics):
+    if username is None:
+      try:
+        username = current_user.username
+      except:
+        username = "nobody"
+    description = "{} diagnostics failed".format(len(diagnostics))
+    for d in diagnostics:
+      description = "{}\nHost: {}".format(description, d.host)
+      description = "{}\nCommand: {}".format(description, d.cmd)
+      description = "{}\nExit Code: {}".format(description, d.exitcode)
+      description = "{}\nStarted: {}".format(description, d.start_date)
+      description = "{}\nFinished: {}".format(description, d.end_date)
+      description = "{}\nInterrupted: {}".format(description, d.interrupted)
+      description = "{}\nSTDOUT: {}".format(description, d.stdout)
+      description = "{}\nSTDERR: {}".format(description, d.stderr)
+      description = "{}\n{}".format(description, "-" * 40)
+    summary_title = '[auto-{}] Problem: {}'.format(username, summary_title)
+    return self.instance.create_issue(
+      project=app.config['JIRA_PROJECT'],
+      summary=summary_title,
+      description=description,
+      issuetype={'name': 'Defect'},
+      customfield_13842=JiraApi.get_datetime_now(),
+      customfield_13838= {"value": "No"},
+      customfield_13831 =  [{"value": "Quality"},
+                            {"value": "Risk Avoidance"}])

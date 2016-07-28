@@ -23,7 +23,7 @@ def view(task_id):
 def list():
   tasks = None
   try:
-    tasks = Task.query.order_by(Task.end_time.desc()).all()
+    tasks = Task.query.order_by(Task.id.desc()).all()
   except Exception as e:
     traceback.print_exc(file=sys.stdout)
     flash("There was an error fetching tasks: {}".format(e), category='danger')

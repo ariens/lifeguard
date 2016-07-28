@@ -15,8 +15,9 @@ class Diagnostic:
                exitcode=None,
                start_date=None,
                end_date=None,
-               timeout=5,
-               interupted=False):
+               interrupted=False,
+               succedded=False,
+               timeout=5):
     self.user = user
     self.host = host
     self.ssh_identity_file = ssh_identity_file
@@ -25,10 +26,10 @@ class Diagnostic:
     self.stdout = stdout
     self.stderr = stderr
     self.exitcode = exitcode
-    self.interupted = interupted
+    self.interrupted = interrupted
     self.start_date = start_date
     self.end_date = end_date
-
+    self.succeeded = succedded
   def run(self):
     self.start_date = datetime.utcnow()
     cmd = subprocess.Popen(['ssh',
@@ -43,8 +44,10 @@ class Diagnostic:
     except subprocess.TimeoutExpired:
       cmd.kill()
       self.stdout, self.stderr = cmd.communicate()
-      self.interupted = True
+      self.interrupted = True
     finally:
+      self.exitcode = cmd.returncode
       self.end_date = datetime.utcnow()
-    self.exitcode = cmd.returncode
+      self.succeeded = True if self.exitcode == 0 else False
+
 

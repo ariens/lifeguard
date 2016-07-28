@@ -1,4 +1,3 @@
-from app import app
 from app.database import Session
 from app.views.vpool.models import VirtualMachinePool
 from app.one import OneProxy, INCLUDING_DONE

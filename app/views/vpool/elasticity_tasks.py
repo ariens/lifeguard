@@ -194,6 +194,7 @@ def update(self, pool, pool_ticket, issue, cowboy_mode=False):
       t_start = JiraApi.get_now()
       t2 = jira.instance.issue(t.key)
       jira.start_task(t2, log=self.log, cowboy_mode=cowboy_mode)
+      updated_members = []
       for a in t2.fields.attachment:
         with Session.begin_nested():
           pool_id, vm_id = a.filename.split('.', 2)[:2]
@@ -206,12 +207,18 @@ def update(self, pool, pool_ticket, issue, cowboy_mode=False):
           new_member = PoolMembership(pool=pool, vm_id=new_id, template=template, date_added=datetime.utcnow())
           Session.add(new_member)
           self.log.msg("Instantiated new VM ID {} and added as member of pool {}".format(new_member.vm_id, pool.name))
+          updated_members.append(new_member)
+
+
+          self.log.msg("waiting for 300 seconds before running post change diagnostics")
+          time.sleep(300)
+          run_diagnostics_on_pool(pool, self.log)
+
+
+
         Session.commit()
       jira.complete_task(t, start_time=t_start, log=self.log, cowboy_mode=cowboy_mode)
     Session.commit()
-    self.log.msg("waiting for 300 seconds before running post change diagnostics")
-    time.sleep(300)
-    run_diagnostics_on_pool(pool, self.log)
     jira.complete_crq(issue, start_time=c_start, log=self.log, cowboy_mode=cowboy_mode)
   except Exception as e:
     self.log.err("Error occured: {}".format(e))

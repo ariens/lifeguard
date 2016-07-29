@@ -23,6 +23,7 @@
         <li><a href="{{ url_for('vpool_bp.view', pool_id=pool.id) }}">View</a></li>
         <li><a href="{{ url_for('vpool_bp.edit', pool_id=pool.id) }}">Edit</a></li>
         <li><a href="{{ url_for('vpool_bp.delete', pool_id=pool.id) }}">Delete</a></li>
+        <li><a href="{{ url_for('vpool_bp.audit_dns', pool_id=pool.id) }}">Audit DNS</a></li>
         <li><a href="{{ url_for('vpool_bp.gen_template', pool_id=pool.id) }}">Template Test</a></li>
         {% if members|length > pool.cardinality %}
             <li><a href="{{ url_for('vpool_bp.shrink', pool_id=pool.id) }}">Shrink</a> <span class="red">({{ members|length - pool.cardinality }} VMs too many)</span></li>

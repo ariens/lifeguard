@@ -448,7 +448,7 @@ def assign_to_pool(zone_number, cluster_id):
       else:
         pool = VirtualMachinePool.query.get(request.form['pool_id'])
         for vm_id in selected_vm_ids.keys():
-          Session.add(PoolMembership(pool=pool, vm_id=vm_id, date_added=datetime.utcnow()))
+          Session.add(PoolMembership(pool=pool, vm_name=id_to_vm[vm_id].name, vm_id=vm_id, date_added=datetime.utcnow()))
           Session.commit()
         flash(Markup('Successfully added {} members to pool <a href="{}">{}</a>'.format(
           len(selected_vm_ids),
@@ -461,13 +461,13 @@ def assign_to_pool(zone_number, cluster_id):
           raise Exception('Pool name cannot be blank')
         pool = VirtualMachinePool(
           name=request.form['new_pool_name'],
-          cluster_id=cluster.id,
+          cluster=cluster,
           zone_number=zone.number,
           cardinality=len(selected_vm_ids))
         Session.add(pool)
         Session.flush()
         for vm_id in selected_vm_ids.keys():
-          membership = PoolMembership(pool=pool, vm_id=vm_id, date_added=datetime.utcnow())
+          membership = PoolMembership(pool=pool, vm_name=id_to_vm[vm_id].name, vm_id=vm_id, date_added=datetime.utcnow())
           memberships[vm_id] = membership
           Session.add(membership)
         Session.flush()

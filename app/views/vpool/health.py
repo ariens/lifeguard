@@ -1,7 +1,5 @@
 import subprocess
 from datetime import datetime
-from app.database import Session
-from app import app
 
 class Diagnostic:
 

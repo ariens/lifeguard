@@ -117,17 +117,18 @@ def expand(self, pool, pool_ticket, issue, cowboy_mode=False):
         t2 = jira.instance.issue(t.key)
         jira.start_task(t2, log=self.log, cowboy_mode=cowboy_mode)
         for a in t2.fields.attachment:
+          pool_id, vm_name = a.filename.split('.', 2)[:2]
           template = a.get().decode(encoding="utf-8", errors="strict")
           vm_id = one_proxy.create_vm(template=template)
           new_vm_ids.append(vm_id)
-          m = PoolMembership(pool=pool, vm_id=vm_id, template=a.get(), date_added=datetime.utcnow())
+          m = PoolMembership(pool=pool, vm_name=vm_name, vm_id=vm_id, template=a.get(), date_added=datetime.utcnow())
           Session.merge(m)
-          self.log.msg("created new vm: {}".format(a.filename))
+          self.log.msg("created new vm: {}".format(vm_name))
           jira.complete_task(t, start_time=t_start, log=self.log, cowboy_mode=cowboy_mode)
     Session.commit()
-    self.log.msg("waiting for 120 seconds before running post change diagnostics")
-    time.sleep(120)
-    run_diagnostics_on_pool(pool, self.log)
+    #self.log.msg("waiting for 120 seconds before running post change diagnostics")
+    #time.sleep(120)
+    #run_diagnostics_on_pool(pool, self.log)
     jira.complete_crq(issue, start_time=c_start, log=self.log, cowboy_mode=cowboy_mode)
   except Exception as e:
     self.log.err("Error occured: {}".format(e))
@@ -168,9 +169,9 @@ def shrink(self, pool, pool_ticket, issue, cowboy_mode=False):
         Session.commit()
       jira.complete_task(t, start_time=t_start, log=self.log, cowboy_mode=cowboy_mode)
     Session.commit()
-    self.log.msg("waiting for 120 seconds before running post change diagnostics")
-    time.sleep(120)
-    run_diagnostics_on_pool(pool, self.log)
+    #self.log.msg("waiting for 120 seconds before running post change diagnostics")
+    #time.sleep(120)
+    #run_diagnostics_on_pool(pool, self.log)
     jira.complete_crq(issue, start_time=c_start, log=self.log, cowboy_mode=cowboy_mode)
   except Exception as e:
     self.log.err("Error occured: {}".format(e))
@@ -208,15 +209,10 @@ def update(self, pool, pool_ticket, issue, cowboy_mode=False):
           Session.add(new_member)
           self.log.msg("Instantiated new VM ID {} and added as member of pool {}".format(new_member.vm_id, pool.name))
           updated_members.append(new_member)
-
-
-          self.log.msg("waiting for 300 seconds before running post change diagnostics")
-          time.sleep(300)
-          run_diagnostics_on_pool(pool, self.log)
-
-
-
-        Session.commit()
+      self.log.msg("waiting for 300 seconds before running post change diagnostics")
+      #time.sleep(120)
+      #run_diagnostics_on_pool(pool, self.log)
+      Session.commit()
       jira.complete_task(t, start_time=t_start, log=self.log, cowboy_mode=cowboy_mode)
     Session.commit()
     jira.complete_crq(issue, start_time=c_start, log=self.log, cowboy_mode=cowboy_mode)

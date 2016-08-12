@@ -101,29 +101,36 @@ def create_shrink_ticket(name, pool, members):
 
 def create_update_ticket(name, pool, members):
   existing_ticket = pool.pending_ticket(PoolTicketActions.update)
+  elasticity_tickets = pool.pending_elasticity_tickets()
   if existing_ticket is not None:
     logging.info("[{}] existing update ticket {} already created for {}".format(
       name, existing_ticket.ticket_key, pool.name))
-  else:
-    update_members = pool.get_update_members(members)
-    if update_members is not None and len(update_members) > 0:
-      logging.info("[{}] {} requires updating and an existing change ticket doesn't exist".format(name, pool.name))
-      title = 'Plan Update => Pool {} ({}/{} members need updates)'.format(pool.name, len(members), pool.cardinality)
-      description = "Pool update triggered that will update {} VM(s): \n\n*{}".format(
-            len(update_members),
-            "\n*".join([m.vm.name for m in update_members]))
-      task = Task(
-        name=title,
-        description="{}\n{}".format(title, description),
-        username="ticket_script")
-      Session.add(task)
-      Session.commit()
-      task_thread = TaskThread(task=task,
-                               run_function=plan_update,
-                               pool=Session.merge(pool),
-                               update_members=update_members)
-      threads.append(task_thread)
-      logging.info("[{}] launched background task {} to {}".format(name, task.id, title))
+    return
+  if len(elasticity_tickets):
+    logging.info("[{}] will not create update ticket because {} conflicting tickets already exist for {}".format(
+      name, len(elasticity_tickets), pool.name))
+    for t in elasticity_tickets:
+      logging.info(t.action_id, t.ticket_key, t.done)
+    return
+  update_members = pool.get_update_members(members)
+  if update_members is not None and len(update_members) > 0:
+    logging.info("[{}] {} requires updating and an existing change ticket doesn't exist".format(name, pool.name))
+    title = 'Plan Update => Pool {} ({}/{} members need updates)'.format(pool.name, len(members), pool.cardinality)
+    description = "Pool update triggered that will update {} VM(s): \n\n*{}".format(
+          len(update_members),
+          "\n*".join([m.vm.name for m in update_members]))
+    task = Task(
+      name=title,
+      description="{}\n{}".format(title, description),
+      username="ticket_script")
+    Session.add(task)
+    Session.commit()
+    task_thread = TaskThread(task=task,
+                             run_function=plan_update,
+                             pool=Session.merge(pool),
+                             update_members=update_members)
+    threads.append(task_thread)
+    logging.info("[{}] launched background task {} to {}".format(name, task.id, title))
 
 def execute_tickets(name, pool, cowboy_mode=False):
   for t in pool.change_tickets:

@@ -167,6 +167,18 @@ class VirtualMachinePool(Base):
   def pending_ticket(self, action):
     return Session.query(PoolTicket).filter_by(pool=self, action_id=action.value, done=False).first()
 
+  def pending_elasticity_tickets(self):
+    tickets = []
+    for t in Session.query(PoolTicket).filter_by(pool=self,
+                                                 action_id=PoolTicketActions.expand.value, done=False).all():
+      print("found ticket: {}".format(t.done))
+      tickets.append(t)
+    for t in Session.query(PoolTicket).filter_by(pool=self,
+                                                 action_id=PoolTicketActions.shrink.value, done=False).all():
+      print("found ticket: {}".format(t.done))
+      tickets.append(t)
+    return tickets
+
   @staticmethod
   def get_all(cluster):
     return Session.query(VirtualMachinePool).filter_by(cluster=cluster)
@@ -181,15 +193,17 @@ class VirtualMachinePool(Base):
 class PoolMembership(Base):
   __tablename__ = 'pool_membership'
   vm_id = Column(Integer, primary_key=True)
+  vm_name = Column(String(255), unique=True, nullable=False)
   pool_id = Column(Integer, ForeignKey('virtual_machine_pool.id'), primary_key=True)
   pool = relationship('VirtualMachinePool', backref=backref('virtual_machine_pool', lazy='dynamic'))
   date_added = Column(DateTime, nullable=False)
   template = Column(Text(), default='{% extends cluster.template %}')
 
-  def __init__(self, pool_id=None, pool=None, vm_id=None, date_added=None, vm=None, template=None):
+  def __init__(self, pool_id=None, pool=None, vm_id=None, vm_name=None, date_added=None, vm=None, template=None):
     self.pool_id = pool_id
     self.pool = pool
     self.vm_id = vm_id
+    self.vm_name = vm_name,
     self.date_added = date_added
     self.vm = vm
     self.template = template

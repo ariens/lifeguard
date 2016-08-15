@@ -17,6 +17,7 @@ from app.views.common.models import ActionForm
 from app.views.zone.models import Zone
 from app.views.cluster.models import Cluster
 from app.ddns import DdnsAuditor
+import logging
 
 vpool_bp = Blueprint('vpool_bp', __name__, template_folder='templates')
 
@@ -263,6 +264,9 @@ def delete(pool_id):
         members = pool.get_memberships()
         for member in members:
           Session.delete(member)
+        for ticket in pool.get_tickets():
+          logging.info("deleted ticket {}".format(ticket.ticket_key))
+          Session.delete(ticket)
         Session.delete(pool)
         Session.commit()
         flash('Deleted pool {} with {} members'.format(pool.name, len(members)), category='success')
@@ -302,6 +306,10 @@ def edit(pool_id):
           raise Exception("Cardinality {} not numeric".format(request.form['cardinality']))
         pool.cardinality = request.form['cardinality']
         Session.add(pool)
+        for m in members:
+          if m.template == 'not-yet-compiled':
+            m.template = ''
+          Session.add(m)
         Session.commit()
         flash('Successfully saved pool template for {} (ID={}).'
               .format(pool.name, pool.id), 'success')

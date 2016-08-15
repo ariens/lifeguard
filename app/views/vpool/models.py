@@ -294,7 +294,7 @@ class PoolTicketActions(Enum):
 
 class PoolTicket(Base):
   __tablename__ = 'pool_ticket'
-  pool = relationship('VirtualMachinePool', backref=backref('change_tickets'), cascade='all')
+  pool = relationship('VirtualMachinePool', backref=backref('change_tickets'))
   pool_id = Column(Integer, ForeignKey('virtual_machine_pool.id'), primary_key=True)
   ticket_key = Column(String(17), primary_key=True)
   task = relationship('Task', backref=backref('pool_tickets'), cascade='all')

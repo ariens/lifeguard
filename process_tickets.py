@@ -1,8 +1,6 @@
-import sys, os, getopt, re, logging
+import sys, os, getopt, logging
 from app.views.task.models import Task, TaskThread
 from app import app, jira
-from app.views.vpool import shrink
-from app.views.vpool.models import PoolTicketActions
 from app.views.vpool.elasticity_planning import plan_expansion, plan_shrink, plan_update
 from app.views.vpool.elasticity_tasks import get_runnable_from_action_id
 from app.jira_api import JiraApi

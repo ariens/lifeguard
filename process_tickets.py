@@ -26,9 +26,19 @@ def worker(name, q, cowboy_mode, plan, implement):
     try:
       logging.info("[{}] assigned tickets for pool {}".format(name, pool.name))
       if plan:
-        create_expansion_ticket(name, pool, members)
-        create_shrink_ticket(name, pool, members)
-        create_update_ticket(name, pool, members)
+        existing_ticket = pool.pending_ticket()
+        expansion_names = pool.get_expansion_names(members)
+        shrink_members = pool.get_members_to_shrink(members)
+        update_members = pool.get_update_members(members)
+        if existing_ticket is not None:
+          logging.info("[{}] existing expand ticket {} already created for {}".format(
+            name, existing_ticket.ticket_key, pool.name))
+        elif expansion_names:
+          create_expansion_ticket(name, pool, members, expansion_names)
+        elif shrink_members:
+          create_shrink_ticket(name, pool, members, shrink_members)
+        elif update_members:
+          create_update_ticket(name, pool, members, update_members)
       else:
         logging.info("[{}] skipping ticket planning".format(name))
       if implement:
@@ -47,73 +57,45 @@ def worker(name, q, cowboy_mode, plan, implement):
     finally:
       q.task_done()
 
-def create_expansion_ticket(name, pool, members):
-  existing_ticket = pool.pending_ticket(PoolTicketActions.expand)
-  if existing_ticket is not None:
-    logging.info("[{}] existing expand ticket {} already created for {}".format(
-      name, existing_ticket.ticket_key, pool.name))
-  else:
-    expansion_names = pool.get_expansion_names(members)
-    if expansion_names is not None and len(expansion_names) > 0:
-      logging.info("[{}] {} requires expansion and an existing change ticket doesn't exist".format(name, pool.name))
-      title = 'Plan Change => Pool Expansion: {} ({} members to {})'.format(pool.name, len(members), pool.cardinality)
-      description = "Pool expansion triggered that will instantiate {} new VM(s): \n\n*{}".format(
-            len(expansion_names),
-            "\n*".join(expansion_names))
-      task = Task(
-        name=title,
-        description="{}\n{}".format(title, description),
-        username="ticket_script")
-      Session.add(task)
-      Session.commit()
-      task_thread = TaskThread(task=task,
-                               run_function=plan_expansion,
-                               pool=Session.merge(pool),
-                               expansion_names=expansion_names)
-      threads.append(task_thread)
-      logging.info("[{}] launched background task {} to {}".format(name, task.id, title))
+def create_expansion_ticket(name, pool, members, expansion_names):
+  logging.info("[{}] {} requires expansion and an existing change ticket doesn't exist".format(name, pool.name))
+  title = 'Plan Change => Pool Expansion: {} ({} members to {})'.format(pool.name, len(members), pool.cardinality)
+  description = "Pool expansion triggered that will instantiate {} new VM(s): \n\n*{}".format(
+        len(expansion_names),
+        "\n*".join(expansion_names))
+  task = Task(
+    name=title,
+    description="{}\n{}".format(title, description),
+    username="ticket_script")
+  Session.add(task)
+  Session.commit()
+  task_thread = TaskThread(task=task,
+                           run_function=plan_expansion,
+                           pool=Session.merge(pool),
+                           expansion_names=expansion_names)
+  threads.append(task_thread)
+  logging.info("[{}] launched background task {} to {}".format(name, task.id, title))
 
-def create_shrink_ticket(name, pool, members):
-  existing_ticket = pool.pending_ticket(PoolTicketActions.shrink)
-  if existing_ticket is not None:
-    logging.info("[{}] existing shrink ticket {} already created for {}".format(
-      name, existing_ticket.ticket_key, pool.name))
-  else:
-    shrink_members = pool.get_members_to_shrink(members)
-    if shrink_members is not None and len(shrink_members) > 0:
-      logging.info("[{}] {} requires shrinking and an existing change ticket doesn't exist".format(name, pool.name))
-      title = 'Plan Shrink => Pool {} ({} members to {})'.format(pool.name, len(members), pool.cardinality)
-      description = "Pool shrink triggered that will shutdown {} VM(s): \n\n*{}".format(
-            len(shrink_members),
-            "\n*".join([m.vm.name for m in shrink_members]))
-      task = Task(
-        name=title,
-        description="{}\n{}".format(title, description),
-        username="ticket_script")
-      Session.add(task)
-      Session.commit()
-      task_thread = TaskThread(task=task,
-                               run_function=plan_shrink,
-                               pool=Session.merge(pool),
-                               shrink_members=shrink_members)
-      threads.append(task_thread)
-      logging.info("[{}] launched background task {} to {}".format(name, task.id, title))
+def create_shrink_ticket(name, pool, members, shrink_members):
+  logging.info("[{}] {} requires shrinking and an existing change ticket doesn't exist".format(name, pool.name))
+  title = 'Plan Shrink => Pool {} ({} members to {})'.format(pool.name, len(members), pool.cardinality)
+  description = "Pool shrink triggered that will shutdown {} VM(s): \n\n*{}".format(
+        len(shrink_members),
+        "\n*".join([m.vm.name for m in shrink_members]))
+  task = Task(
+    name=title,
+    description="{}\n{}".format(title, description),
+    username="ticket_script")
+  Session.add(task)
+  Session.commit()
+  task_thread = TaskThread(task=task,
+                           run_function=plan_shrink,
+                           pool=Session.merge(pool),
+                           shrink_members=shrink_members)
+  threads.append(task_thread)
+  logging.info("[{}] launched background task {} to {}".format(name, task.id, title))
 
-def create_update_ticket(name, pool, members):
-  existing_ticket = pool.pending_ticket(PoolTicketActions.update)
-  elasticity_tickets = pool.pending_elasticity_tickets()
-  if existing_ticket is not None:
-    logging.info("[{}] existing update ticket {} already created for {}".format(
-      name, existing_ticket.ticket_key, pool.name))
-    return
-  if len(elasticity_tickets):
-    logging.info("[{}] will not create update ticket because {} conflicting tickets already exist for {}".format(
-      name, len(elasticity_tickets), pool.name))
-    for t in elasticity_tickets:
-      logging.info(t.action_id, t.ticket_key, t.done)
-    return
-  update_members = pool.get_update_members(members)
-  if update_members is not None and len(update_members) > 0:
+def create_update_ticket(name, pool, members, update_members):
     logging.info("[{}] {} requires updating and an existing change ticket doesn't exist".format(name, pool.name))
     title = 'Plan Update => Pool {} ({}/{} members need updates)'.format(pool.name, len(members), pool.cardinality)
     description = "Pool update triggered that will update {} VM(s): \n\n*{}".format(

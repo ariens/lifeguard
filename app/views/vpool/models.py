@@ -164,19 +164,15 @@ class VirtualMachinePool(Base):
           update_members.append(m)
     return update_members
 
-  def pending_ticket(self, action):
-    return Session.query(PoolTicket).filter_by(pool=self, action_id=action.value, done=False).first()
+  def pending_ticket(self):
+    return Session.query(PoolTicket).filter_by(pool=self, done=False).first()
 
   def pending_elasticity_tickets(self):
     tickets = []
-    for t in Session.query(PoolTicket).filter_by(pool=self,
-                                                 action_id=PoolTicketActions.expand.value, done=False).all():
-      print("found ticket: {}".format(t.done))
-      tickets.append(t)
-    for t in Session.query(PoolTicket).filter_by(pool=self,
-                                                 action_id=PoolTicketActions.shrink.value, done=False).all():
-      print("found ticket: {}".format(t.done))
-      tickets.append(t)
+    for t in Session.query(PoolTicket).filter_by(pool=self).all():
+      if not t.done and t.action_id in [PoolTicketActions.expand.value, PoolTicketActions.shrink.value]:
+        tickets.append(t)
+        print("found ticket: {}".format(t.done))
     return tickets
 
   @staticmethod
@@ -197,7 +193,7 @@ class PoolMembership(Base):
   pool_id = Column(Integer, ForeignKey('virtual_machine_pool.id'), primary_key=True)
   pool = relationship('VirtualMachinePool', backref=backref('virtual_machine_pool', lazy='dynamic'))
   date_added = Column(DateTime, nullable=False)
-  template = Column(Text(), default='{% extends cluster.template %}')
+  template = Column(Text(), default='not-yet-compiled')
 
   def __init__(self, pool_id=None, pool=None, vm_id=None, vm_name=None, date_added=None, vm=None, template=None):
     self.pool_id = pool_id
@@ -229,7 +225,7 @@ class PoolMembership(Base):
 
   def is_current(self):
     try:
-      return self.template == self.current_template()
+      return self.template == self.current_template() or self.template == 'not-yet-compiled'
     except Exception as e:
       raise e
 

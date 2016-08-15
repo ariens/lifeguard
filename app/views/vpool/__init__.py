@@ -265,7 +265,7 @@ def delete(pool_id):
           Session.delete(member)
         Session.delete(pool)
         Session.commit()
-        flash('Deleted pool {} with {} memberse'.format(pool.name, len(members)), category='success')
+        flash('Deleted pool {} with {} members'.format(pool.name, len(members)), category='success')
         return redirect(url_for('cluster_bp.view', zone_number=pool.cluster.zone.number, cluster_id=pool.cluster.id))
     except Exception as e:
       # raise e

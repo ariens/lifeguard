@@ -3,6 +3,7 @@ from wtforms import StringField, PasswordField, TextAreaField
 from wtforms.validators import InputRequired
 from app.database import Base
 from sqlalchemy import Column, Integer, String, Text
+from app.ddns import DdnsAuditor
 
 class Zone(Base):
   __tablename__ = 'zone'
@@ -10,6 +11,7 @@ class Zone(Base):
   name = Column(String(100), unique=True, nullable=False)
   xmlrpc_uri = Column(String(100), nullable=False)
   session_string = Column(String(100), nullable=False)
+
   template = Column(Text())
   vars = Column(Text())
   ddns_master = Column(String(250), nullable=False)
@@ -19,11 +21,31 @@ class Zone(Base):
   ddns_tsig_rev_name = Column(String(250), nullable=False)
   ddns_tsig_rev_key = Column(String(250), nullable=False)
 
-  def __init__(self, number=None, name=None, xmlrpc_uri=None, session_string=None):
+  def __init__(self,
+               number=None,
+               name=None,
+               xmlrpc_uri=None,
+               session_string=None,
+               template=None,
+               vars=None,
+               ddns_master=None,
+               ddns_domain=None,
+               ddns_tsig_fwd_name=None,
+               ddns_tsig_fwd_key=None,
+               ddns_tsig_rev_name=None,
+               ddns_tsig_rev_key=None):
+    self.number = number
     self.name = name
     self.xmlrpc_uri = xmlrpc_uri
     self.session_string = session_string
-    self.number = number
+    self.template = template
+    self.vars = vars
+    self.ddns_master = ddns_master
+    self.ddns_domain = ddns_domain
+    self.ddns_tsig_fwd_name = ddns_tsig_fwd_name
+    self.ddns_tsig_fwd_key = ddns_tsig_fwd_key
+    self.ddns_tsig_rev_name = ddns_tsig_rev_name
+    self.ddns_tsig_rev_key = ddns_tsig_rev_key
 
   def __str__(self):
     return 'Zone: number={}, name={}, xmlrpc_uri={}'.format(
@@ -31,6 +53,9 @@ class Zone(Base):
 
   def __repr__(self):
     self.__str__()
+
+  def get_ddns_api(self):
+    return DdnsAuditor(zone=self)
 
 
 class ZoneForm(Form):

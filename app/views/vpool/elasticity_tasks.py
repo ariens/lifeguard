@@ -60,7 +60,6 @@ def diagnostic_worker(q, results, log):
         stderr=diagnostic.stderr,
         exitcode=diagnostic.exitcode))
       Session.commit()
-      #log.msg("saved diagnostic for {}".format(vm.name))
       results.append(diagnostic)
       q.task_done()
 
@@ -109,23 +108,22 @@ def expand(self, pool, pool_ticket, issue, cowboy_mode=False):
   self.task = Session.merge(self.task)
   one_proxy = OneProxy(pool.cluster.zone.xmlrpc_uri, pool.cluster.zone.session_string, verify_certs=False)
   try:
-    with Session.begin_nested():
-      c_start = JiraApi.get_now()
-      jira.start_crq(issue, log=self.log, cowboy_mode=cowboy_mode)
-      for t in issue.fields.subtasks:
-        t_start = JiraApi.get_now()
-        t2 = jira.instance.issue(t.key)
-        jira.start_task(t2, log=self.log, cowboy_mode=cowboy_mode)
-        for a in t2.fields.attachment:
-          pool_id, vm_name = a.filename.split('.', 2)[:2]
-          template = a.get().decode(encoding="utf-8", errors="strict")
-          vm_id = one_proxy.create_vm(template=template)
-          new_vm_ids.append(vm_id)
-          m = PoolMembership(pool=pool, vm_name=vm_name, vm_id=vm_id, template=a.get(), date_added=datetime.utcnow())
-          Session.merge(m)
-          self.log.msg("created new vm: {}".format(vm_name))
-          jira.complete_task(t, start_time=t_start, log=self.log, cowboy_mode=cowboy_mode)
-    Session.commit()
+    c_start = JiraApi.get_now()
+    jira.start_crq(issue, log=self.log, cowboy_mode=cowboy_mode)
+    for t in issue.fields.subtasks:
+      t_start = JiraApi.get_now()
+      t2 = jira.instance.issue(t.key)
+      jira.start_task(t2, log=self.log, cowboy_mode=cowboy_mode)
+      for a in t2.fields.attachment:
+        pool_id, vm_name = a.filename.split('.', 2)[:2]
+        template = a.get().decode(encoding="utf-8", errors="strict")
+        vm_id = one_proxy.create_vm(template=template)
+        new_vm_ids.append(vm_id)
+        m = PoolMembership(pool=pool, vm_name=vm_name, vm_id=vm_id, template=a.get(), date_added=datetime.utcnow())
+        Session.merge(m)
+        Session.commit()
+        self.log.msg("created new vm: {}".format(vm_name))
+        jira.complete_task(t, start_time=t_start, log=self.log, cowboy_mode=cowboy_mode)
     self.log.msg("waiting for 120 seconds before running post change diagnostics")
     time.sleep(120)
     run_diagnostics_on_pool(pool, self.log)
@@ -133,25 +131,23 @@ def expand(self, pool, pool_ticket, issue, cowboy_mode=False):
   except Exception as e:
     self.log.err("Error occured: {}".format(e))
     jira.cancel_crq_and_tasks(issue, comment="an exception occured running this change: {}".format(e))
-    self.log.msg("Trying to clean up {} new VMs".format(len(new_vm_ids)))
-    for kill_id in new_vm_ids:
-      try:
-        one_proxy.kill_vm(vm_id=kill_id)
-        self.log.msg("killed VM ID {}".format(kill_id))
-      except Exception as e2:
-        self.log.err("Exception killing vm_id={}, error: {}".format(kill_id, e2))
+    #self.log.msg("Trying to clean up {} new VMs".format(len(new_vm_ids)))
+    #for kill_id in new_vm_ids:
+    #  try:
+    #    one_proxy.kill_vm(vm_id=kill_id)
+    #    self.log.msg("killed VM ID {}".format(kill_id))
+    #  except Exception as e2:
+    #    self.log.err("Exception killing vm_id={}, error: {}".format(kill_id, e2))
     raise e
   finally:
-    with Session.begin_nested():
-      pool_ticket.done = True
-      Session.merge(pool_ticket)
+    pool_ticket.done = True
+    Session.merge(pool_ticket)
     Session.commit()
 
 def shrink(self, pool, pool_ticket, issue, cowboy_mode=False):
   pool = Session.merge(pool)
   pool_ticket = Session.merge(pool_ticket)
   self.task = Session.merge(self.task)
-  one_proxy = OneProxy(pool.cluster.zone.xmlrpc_uri, pool.cluster.zone.session_string, verify_certs=False)
   try:
     c_start = JiraApi.get_now()
     jira.start_crq(issue, log=self.log, cowboy_mode=cowboy_mode)
@@ -160,15 +156,13 @@ def shrink(self, pool, pool_ticket, issue, cowboy_mode=False):
       t2 = jira.instance.issue(t.key)
       jira.start_task(t2, log=self.log, cowboy_mode=cowboy_mode)
       for a in t2.fields.attachment:
-        with Session.begin_nested():
-          pool_id, vm_id = a.filename.split('.', 2)[:2]
-          member = PoolMembership.query.filter_by(pool=pool, vm_id=vm_id).first()
-          one_proxy.kill_vm(member.vm_id)
-          Session.delete(member)
-          self.log.msg("Killed VM {} and removed it as member of pool {}".format(member.vm_id, pool.name))
+        pool_id, vm_id = a.filename.split('.', 2)[:2]
+        member = PoolMembership.query.filter_by(pool=pool, vm_id=vm_id).first()
+        member.retire()
+        Session.delete(member)
+        self.log.msg("Retired VM {} and removed it as member of pool {}".format(member.vm_id, pool.name))
         Session.commit()
       jira.complete_task(t, start_time=t_start, log=self.log, cowboy_mode=cowboy_mode)
-    Session.commit()
     self.log.msg("waiting for 120 seconds before running post change diagnostics")
     time.sleep(120)
     run_diagnostics_on_pool(pool, self.log)
@@ -178,9 +172,8 @@ def shrink(self, pool, pool_ticket, issue, cowboy_mode=False):
     jira.cancel_crq_and_tasks(issue, comment="an exception occured running this change: {}".format(e))
     raise e
   finally:
-    with Session.begin_nested():
-      pool_ticket.done = True
-      Session.merge(pool_ticket)
+    pool_ticket.done = True
+    Session.merge(pool_ticket)
     Session.commit()
 
 def update(self, pool, pool_ticket, issue, cowboy_mode=False):
@@ -197,32 +190,29 @@ def update(self, pool, pool_ticket, issue, cowboy_mode=False):
       jira.start_task(t2, log=self.log, cowboy_mode=cowboy_mode)
       updated_members = []
       for a in t2.fields.attachment:
-        with Session.begin_nested():
-          pool_id, vm_id = a.filename.split('.', 2)[:2]
-          template = a.get().decode(encoding="utf-8", errors="strict")
-          member = PoolMembership.query.filter_by(pool=pool, vm_id=vm_id).first()
-          vm_name = member.vm_name
-          one_proxy.kill_vm(member.vm_id)
-          self.log.msg("killed VM ID: {}".format(vm_id))
-          Session.delete(member)
-          new_id = one_proxy.create_vm(template=template)
-          new_member = PoolMembership(pool=pool, vm_name=vm_name, vm_id=new_id, template=template, date_added=datetime.utcnow())
-          Session.add(new_member)
-          self.log.msg("Instantiated new VM ID {} and added as member of pool {}".format(new_member.vm_id, pool.name))
-          updated_members.append(new_member)
-      self.log.msg("waiting for 300 seconds before running post change diagnostics")
+        pool_id, vm_id = a.filename.split('.', 2)[:2]
+        template = a.get().decode(encoding="utf-8", errors="strict")
+        member = PoolMembership.query.filter_by(pool=pool, vm_id=vm_id).first()
+        vm_name = member.vm_name
+        one_proxy.kill_vm(member.vm_id)
+        self.log.msg("killed VM ID: {}".format(vm_id))
+        Session.delete(member)
+        new_id = one_proxy.create_vm(template=template)
+        new_member = PoolMembership(pool=pool, vm_name=vm_name, vm_id=new_id, template=template, date_added=datetime.utcnow())
+        Session.add(new_member)
+        Session.commit()
+        self.log.msg("Instantiated new VM ID {} and added as member of pool {}".format(new_member.vm_id, pool.name))
+        updated_members.append(new_member)
+      self.log.msg("waiting for 120 seconds before running post change diagnostics")
       time.sleep(120)
       run_diagnostics_on_pool(pool, self.log)
-      Session.commit()
       jira.complete_task(t, start_time=t_start, log=self.log, cowboy_mode=cowboy_mode)
-    Session.commit()
     jira.complete_crq(issue, start_time=c_start, log=self.log, cowboy_mode=cowboy_mode)
   except Exception as e:
     self.log.err("Error occured: {}".format(e))
     jira.cancel_crq_and_tasks(issue, comment="an exception occured running this change: {}".format(e))
     raise e
   finally:
-    with Session.begin_nested():
-      pool_ticket.done = True
-      Session.merge(pool_ticket)
+    pool_ticket.done = True
+    Session.merge(pool_ticket)
     Session.commit()

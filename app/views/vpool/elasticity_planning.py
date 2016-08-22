@@ -8,9 +8,7 @@ from math import ceil, floor
 
 def plan_expansion(self, pool, expansion_names):
   task = crq = None
-  #session = Session()
   try:
-    #with session.begin_nested():
     pool = Session.merge(pool)
     start, end = jira.next_immediate_window_dates()
     logging = jira.instance.issue('SVC-1020')
@@ -218,9 +216,7 @@ def plan_shrink(self, pool, shrink_members):
       task=Session.merge(self.task))
     Session.add(db_ticket)
     Session.commit()
-    Session.remove()
   except Exception as e:
-    Session.rollback()
     if crq is not None:
       jira.cancel_crq_and_tasks(crq, comment="failure creating change tickets")
     raise e

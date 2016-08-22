@@ -236,8 +236,7 @@ def audit_dns(pool_id):
   form = ActionForm()
   pool = VirtualMachinePool.query.get(pool_id)
   members = pool.get_memberships()
-  ddns_auditor = DdnsAuditor(zone=pool.cluster.zone)
-  ddns_audit_log = ddns_auditor.audit_pool_dns(pool=pool, members=members, resolve_errors=False)
+  ddns_audit_log = pool.cluster.zone.get_ddns_api().audit_pool_dns(pool=pool, members=members, resolve_errors=True)
   return render_template('vpool/audit_dns.html',
                          form=form,
                          pool=pool,

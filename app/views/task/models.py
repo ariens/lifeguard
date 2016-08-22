@@ -113,7 +113,6 @@ class TaskThread(Thread):
     Session.commit()
     try:
       self.run_function(**kwargs)
-
       self.task.log = self.log.messages
       self.task.end_time = datetime.utcnow()
       self.task.status = TaskStatus.finished.value
@@ -136,7 +135,8 @@ class TaskThread(Thread):
       self.task.defect_ticket = defect.key
       self.task = Session.merge(self.task)
       Session.commit()
-    Session.remove()
+    finally:
+      Session.remove()
 
 class DumbLog:
   """

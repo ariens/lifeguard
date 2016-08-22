@@ -1,3 +1,4 @@
+import logging
 from flask_wtf import Form
 from wtforms import TextAreaField, StringField
 from wtforms.validators import InputRequired
@@ -209,6 +210,18 @@ class PoolMembership(Base):
       return 'delete'
     else:
       return "shutdown"
+
+  def retire(self):
+    one_proxy = OneProxy(self.pool.cluster.zone.xmlrpc_uri, self.pool.cluster.zone.session_string, verify_certs=False)
+    one_proxy.kill_vm(self.vm_id)
+    ip = None
+    if self.vm is not None:
+      ip = self.vm.ip_address
+    else:
+      vm = one_proxy.get_vm(self.vm_id)
+      ip = vm.ip_address
+    self.pool.zone.ddns_api.delete_ip_from_pool_record(self.pool, ip)
+    logging.info("removed ip address {} member of pool {}".format(ip, self.pool.name))
 
   def is_done(self):
     if self.vm.state_id >= 4:

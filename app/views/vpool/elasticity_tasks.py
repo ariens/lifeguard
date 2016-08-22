@@ -39,9 +39,8 @@ def diagnostic_worker(q, results, log):
   while True:
     work = q.get()
     member = Session.merge(work['member'])
-    vm = work['vm']
     diagnostic = Diagnostic(user=app.config['SSH_HEALTH_CHECK_USER'],
-                            host=vm.name,
+                            host=member.vm_name,
                             ssh_identity_file=app.config['SSH_IDENTITY_FILE'],
                             cmd=app.config['SSH_HEALTH_CHECK_CMD'],
                             timeout=app.config['SSH_HEALTH_CHECK_TIMEOUT'])
@@ -52,7 +51,7 @@ def diagnostic_worker(q, results, log):
       log.err("diagnostic error: {}".format(e))
     finally:
       Session.add(PoolMemberDiagnostic(
-        vm_id=vm.id,
+        vm_id=member.vm_id,
         pool=member.pool,
         start_date=diagnostic.start_date,
         end_date=diagnostic.end_date,
@@ -72,7 +71,7 @@ def run_diagnostics(members, log):
   results = []
   q = Queue()
   for member in members:
-    q.put({'member': member, 'vm': member.vm})
+    q.put({'member': member})
   for i in range(app.config['NUM_HEALTH_CHECK_THREADS']):
     t = Thread(target=diagnostic_worker, kwargs={'q': q,
                                                  'results': results,
@@ -123,21 +122,14 @@ def expand(self, pool, pool_ticket, issue, cowboy_mode=False):
         Session.merge(m)
         Session.commit()
         self.log.msg("created new vm: {}".format(vm_name))
+        self.log.msg("waiting for 120 seconds before running post task diagnostics")
+        time.sleep(120)
+        run_diagnostics_on_pool(pool, self.log)
         jira.complete_task(t, start_time=t_start, log=self.log, cowboy_mode=cowboy_mode)
-    self.log.msg("waiting for 120 seconds before running post change diagnostics")
-    time.sleep(120)
-    run_diagnostics_on_pool(pool, self.log)
     jira.complete_crq(issue, start_time=c_start, log=self.log, cowboy_mode=cowboy_mode)
   except Exception as e:
     self.log.err("Error occured: {}".format(e))
     jira.cancel_crq_and_tasks(issue, comment="an exception occured running this change: {}".format(e))
-    #self.log.msg("Trying to clean up {} new VMs".format(len(new_vm_ids)))
-    #for kill_id in new_vm_ids:
-    #  try:
-    #    one_proxy.kill_vm(vm_id=kill_id)
-    #    self.log.msg("killed VM ID {}".format(kill_id))
-    #  except Exception as e2:
-    #    self.log.err("Exception killing vm_id={}, error: {}".format(kill_id, e2))
     raise e
   finally:
     pool_ticket.done = True
@@ -160,10 +152,10 @@ def shrink(self, pool, pool_ticket, issue, cowboy_mode=False):
         member = PoolMembership.query.filter_by(pool=pool, vm_id=vm_id).first()
         member.retire()
         Session.delete(member)
-        self.log.msg("Retired VM {} and removed it as member of pool {}".format(member.vm_id, pool.name))
         Session.commit()
+        self.log.msg("Retired VM {} and removed it as member of pool {}".format(member.vm_id, pool.name))
       jira.complete_task(t, start_time=t_start, log=self.log, cowboy_mode=cowboy_mode)
-    self.log.msg("waiting for 120 seconds before running post change diagnostics")
+    self.log.msg("waiting for 120 seconds before running post task diagnostics")
     time.sleep(120)
     run_diagnostics_on_pool(pool, self.log)
     jira.complete_crq(issue, start_time=c_start, log=self.log, cowboy_mode=cowboy_mode)
@@ -194,9 +186,9 @@ def update(self, pool, pool_ticket, issue, cowboy_mode=False):
         template = a.get().decode(encoding="utf-8", errors="strict")
         member = PoolMembership.query.filter_by(pool=pool, vm_id=vm_id).first()
         vm_name = member.vm_name
-        one_proxy.kill_vm(member.vm_id)
-        self.log.msg("killed VM ID: {}".format(vm_id))
+        member.retire()
         Session.delete(member)
+        Session.commit()
         new_id = one_proxy.create_vm(template=template)
         new_member = PoolMembership(pool=pool, vm_name=vm_name, vm_id=new_id, template=template, date_added=datetime.utcnow())
         Session.add(new_member)

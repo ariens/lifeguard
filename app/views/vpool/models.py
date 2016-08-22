@@ -213,14 +213,10 @@ class PoolMembership(Base):
 
   def retire(self):
     one_proxy = OneProxy(self.pool.cluster.zone.xmlrpc_uri, self.pool.cluster.zone.session_string, verify_certs=False)
-    one_proxy.kill_vm(self.vm_id)
-    ip = None
-    if self.vm is not None:
-      ip = self.vm.ip_address
-    else:
-      vm = one_proxy.get_vm(self.vm_id)
-      ip = vm.ip_address
+    vm = one_proxy.get_vm(self.vm_id)
+    ip = vm.ip_address
     self.pool.cluster.zone.get_ddns_api().delete_ip_from_pool_record(self.pool, ip)
+    one_proxy.kill_vm(self.vm_id)
     logging.info("removed ip address {} member of pool {}".format(ip, self.pool.name))
 
   def is_done(self):

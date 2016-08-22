@@ -122,7 +122,7 @@ def expand(self, pool, pool_ticket, issue, cowboy_mode=False):
         Session.merge(m)
         Session.commit()
         self.log.msg("created new vm: {}".format(vm_name))
-        jira.complete_task(t, start_time=t_start, log=self.log, cowboy_mode=cowboy_mode)
+      jira.complete_task(t, start_time=t_start, log=self.log, cowboy_mode=cowboy_mode)
     self.log.msg("waiting for 120 seconds before running post task diagnostics")
     time.sleep(120)
     run_diagnostics_on_pool(pool, self.log)

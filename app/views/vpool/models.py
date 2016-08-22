@@ -220,7 +220,7 @@ class PoolMembership(Base):
     else:
       vm = one_proxy.get_vm(self.vm_id)
       ip = vm.ip_address
-    self.pool.zone.ddns_api.delete_ip_from_pool_record(self.pool, ip)
+    self.pool.cluster.zone.get_ddns_api().delete_ip_from_pool_record(self.pool, ip)
     logging.info("removed ip address {} member of pool {}".format(ip, self.pool.name))
 
   def is_done(self):

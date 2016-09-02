@@ -10,7 +10,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='lifeguard',
-    version='0.1.11',
+    version='0.1.12',
     url='https://gitlab.rim.net/ipgbd-software/lifeguard-webapp',
     description='Web based management of pools of servers',
     long_description=__doc__,

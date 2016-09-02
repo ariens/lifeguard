@@ -1,8 +1,5 @@
-ddns_hack.py
-test_pool.py
-settings.cfg
 python
 __pycache__
 .idea
-clean_crqs.py
-clean_defects.py
+lifeguard.egg-info
+dist

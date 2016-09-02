@@ -1,0 +1,2 @@
+recursive-include lifeguard/templates *
+recursive-include lifeguard/static *
